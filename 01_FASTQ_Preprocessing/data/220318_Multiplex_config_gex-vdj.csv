@@ -1,0 +1,28 @@
+[gene-expression],,,
+reference,/mnt/NASBIOINFO_CP/LALT/BIOINFO/References/Mouse/refdata-gex-mm10-2020-A,,
+r1-length,26,,
+r2-length,93,,
+Include-introns,true,,
+,,,
+[vdj],,,
+reference,/mnt/NASBIOINFO_CP/LALT/BIOINFO/References/Mouse/refdata-cellranger-vdj-GRCm38-alts-ensembl-7.0.0,,
+r1-length,26,,
+r2-length,93,,
+,,,
+[feature],,,
+reference,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/02_Preprocessing/cellranger702/220318/220318_Multiplex_count_feature_reference.csv,,
+,,,
+[libraries],,,
+fastq_id,fastqs,lanes,feature_types
+PtenOTIIB6_mRNA1_library,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/01_RAWDATA/220318_VH00228_97_AAAVWGGM5/Analysis/1/Data/fastq,any,Gene Expression
+PtenOTIIB6_mRNA2_library,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/01_RAWDATA/220318_VH00228_97_AAAVWGGM5/Analysis/1/Data/fastq,any,Gene Expression
+PtenOTIIB6_mRNA3_library,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/01_RAWDATA/220318_VH00228_97_AAAVWGGM5/Analysis/1/Data/fastq,any,Gene Expression
+PtenOTIIB6_mRNA4_library,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/01_RAWDATA/220318_VH00228_97_AAAVWGGM5/Analysis/1/Data/fastq,any,Gene Expression
+PtenOTIIB6_TCR1_library,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/01_RAWDATA/220318_VH00228_97_AAAVWGGM5/Analysis/1/Data/fastq,any,VDJ-T
+PtenOTIIB6_TCR2_library,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/01_RAWDATA/220318_VH00228_97_AAAVWGGM5/Analysis/1/Data/fastq,any,VDJ-T
+PtenOTIIB6_TCR3_library,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/01_RAWDATA/220318_VH00228_97_AAAVWGGM5/Analysis/1/Data/fastq,any,VDJ-T
+PtenOTIIB6_TCR4_library,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/01_RAWDATA/220318_VH00228_97_AAAVWGGM5/Analysis/1/Data/fastq,any,VDJ-T
+PtenOTIIB6_HTO1_library,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/01_RAWDATA/220318_VH00228_97_AAAVWGGM5/Analysis/1/Data/fastq,any,Antibody Capture
+PtenOTIIB6_HTO2_library,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/01_RAWDATA/220318_VH00228_97_AAAVWGGM5/Analysis/1/Data/fastq,any,Antibody Capture
+PtenOTIIB6_HTO3_library,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/01_RAWDATA/220318_VH00228_97_AAAVWGGM5/Analysis/1/Data/fastq,any,Antibody Capture
+PtenOTIIB6_HTO4_library,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/01_RAWDATA/220318_VH00228_97_AAAVWGGM5/Analysis/1/Data/fastq,any,Antibody Capture

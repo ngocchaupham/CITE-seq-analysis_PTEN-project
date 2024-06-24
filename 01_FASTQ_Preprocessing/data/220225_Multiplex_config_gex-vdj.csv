@@ -1,0 +1,28 @@
+[gene-expression],,,
+reference,/mnt/NASBIOINFO_CP/LALT/BIOINFO/References/refdata-gex-mm10-2020-A,,
+r1-length,26,,
+r2-length,93,,
+Include-introns,true,,
+,,,
+[vdj],,,
+reference,/mnt/NASBIOINFO_CP/LALT/BIOINFO/References/refdata-cellranger-vdj-GRCm38-alts-ensembl-7.0.0,,
+r1-length,26,,
+r2-length,93,,
+,,,
+[feature],,,
+reference,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/02_Preprocessing/cellranger702/220225/220225_Multiplex_count_feature_reference.csv,,
+,,,
+[libraries],,,
+fastq_id,fastqs,lanes,feature_types
+PTENBalbC_pretum_mRNA1,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/01_RAWDATA/220225_VH00228_90_AAAVKGNM5/Analysis/1/Data/fastq,any,Gene Expression
+PTENBalbC_pretum_mRNA2,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/01_RAWDATA/220225_VH00228_90_AAAVKGNM5/Analysis/1/Data/fastq,any,Gene Expression
+PTENBalbC_pretum_mRNA3,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/01_RAWDATA/220225_VH00228_90_AAAVKGNM5/Analysis/1/Data/fastq,any,Gene Expression
+PTENBalbC_pretum_mRNA4,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/01_RAWDATA/220225_VH00228_90_AAAVKGNM5/Analysis/1/Data/fastq,any,Gene Expression
+PTENBalbC_pretum_TCR1,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/01_RAWDATA/220225_VH00228_90_AAAVKGNM5/Analysis/1/Data/fastq,any,VDJ-T
+PTENBalbC_pretum_TCR2,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/01_RAWDATA/220225_VH00228_90_AAAVKGNM5/Analysis/1/Data/fastq,any,VDJ-T
+PTENBalbC_pretum_TCR3,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/01_RAWDATA/220225_VH00228_90_AAAVKGNM5/Analysis/1/Data/fastq,any,VDJ-T
+PTENBalbC_pretum_TCR4,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/01_RAWDATA/220225_VH00228_90_AAAVKGNM5/Analysis/1/Data/fastq,any,VDJ-T
+PTENBalbC_pretum_HTO1,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/01_RAWDATA/220225_VH00228_90_AAAVKGNM5/Analysis/1/Data/fastq,any,Antibody Capture
+PTENBalbC_pretum_HTO2,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/01_RAWDATA/220225_VH00228_90_AAAVKGNM5/Analysis/1/Data/fastq,any,Antibody Capture
+PTENBalbC_pretum_HTO3,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/01_RAWDATA/220225_VH00228_90_AAAVKGNM5/Analysis/1/Data/fastq,any,Antibody Capture
+PTENBalbC_pretum_HTO4,/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/01_RAWDATA/220225_VH00228_90_AAAVKGNM5/Analysis/1/Data/fastq,any,Antibody Capture
