@@ -70,45 +70,7 @@ cd  $WORKING_DIR/01_FASTQ_Preprocessing/02_Output
 
 #Run CellRanger
 #replace by good link to file
-nohup /usr/local/share/cellranger/cellranger-7.2.0/cellranger multi --id=the_name_of_the_output_file --csv=location_of_config_file.csv --localmem=256
-#Replicate 2
-nohup /usr/local/share/cellranger/cellranger-2.1.0/cellranger count --id=MycPten_mm10_rep2_mRNA --expect-cells=6000 --transcriptome=$WORKING_DIR/01_FASTQ_Preprocessing/03_Data/Reference/cellranger_mm10-eYFP --fastq=$WORKING_DIR/03_Data/FASTQ/ --sample=rep2_mRNA &
+nohup /usr/local/share/cellranger/cellranger-7.2.0/cellranger multi --id=the_name_of_the_output_file --csv=$WORKING_DIR/01_FASTQ_Preprocessing/data/name_of_config_file.csv --localmem=256
+
 ```
-Once the analysis is done, you should get result files in the WORKING_DIR/01_FASTQ_Preprocessing/02_Output folder (with the newly created "MycPten_mm10_rep_1_mRNA" and rep2 folder)
-
-#### cite-seq-Count
-input : Fastq files are avaible in [SRP311697](https://trace.ncbi.nlm.nih.gov/Traces/sra/?study=SRP311697) <br/>
-output : The ouput directory will contain the classical CiteSeqCount output with the pre-processed data that is used later in the Seurat analysis.
-- HTO count per cells
-  - HTO_barcodes.tsv.gz
-  - HTO_features.tsv.gz
-  - HTO_matrix.mtx.gz
-
-And only for replicate 2 :
-- ADT count per cells
-  - ADT_barcodes.tsv.gz
-  - ADT_features.tsv.gz
-  - ADT_matrix.mtx.gz
-
-Execution :
-```bash
-# Launch singularity image
-singularity shell $WORKING_DIR/Images/Singularity/MycPten_CITE/citeseqcount141_image.tar
-
-bash
-
-#Go to the output directory
-cd /MycPten/01_FASTQ_Preprocessing/02_Output
-
-#FOR REPLICATE 1
-# HTO
-CITE-seq-Count -R1 $WORKING_DIR/01_FASTQ_Preprocessing/03_Data/FASTQ/rep1_HTO_S2_R1.fastq.gz -R2 $WORKING_DIR/01_FASTQ_Preprocessing/03_Data/FASTQ/rep1_HTO_S2_R2.fastq.gz -t $WORKING_DIR/01_FASTQ_Preprocessing/03_Data/HTOlist_rep1.csv -cbf 1 -cbl 16 -umif 17 -umil 26 --max-errors 2 -cell 40000 -o MycPten_rep1_HTO
-
-#FOR REPLICATE 2
-#HTO
-CITE-seq-Count -R1 $WORKING_DIR/01_FASTQ_Preprocessing/03_Data/FASTQ/rep2_HTO_S2_R1.fastq.gz -R2 $WORKING_DIR/01_FASTQ_Preprocessing/03_Data/FASTQ/rep2_HTO_S2_R2.fastq.gz -t $WORKING_DIR/01_FASTQ_Preprocessing/03_Data/HTOlist_rep2.csv -cbf 1 -cbl 16 -umif 17 -umil 26 --max-errors 2 -cell 40000 -o MycPten_rep2_HTO
-
-#ADT
-CITE-seq-Count -R1 $WORKING_DIR/01_FASTQ_Preprocessing/03_Data/FASTQ/rep2_ADT_S3_R1.fastq.gz -R2 $WORKING_DIR/01_FASTQ_Preprocessing/03_Data/FASTQ/rep2_ADT_S3_R2.fastq.gz -t $WORKING_DIR/01_FASTQ_Preprocessing/03_Data/ADTlist_rep2.csv -cbf 1 -cbl 16 -umif 17 -umil 26 --max-errors 2 -cell 40000 -o MycPten_rep2_ADT
-```
-
+Once the analysis is done, you should get result files in the WORKING_DIR/01_FASTQ_Preprocessing/02_Output folder
