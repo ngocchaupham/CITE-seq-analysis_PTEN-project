@@ -39,9 +39,6 @@ wget -P $WORKING_DIR/Images/Singularity/Pten_Cellranger https://zenodo.org/uploa
 #### Launch Singularity images
 Singularity must be installed on your system. In order to execute analysis, you must first launch the singularity image you want to use. See https://singularity.lbl.gov/quickstart for details on Singularity installation.
 
-
-#### RAW Files 
-
 ### Run the Fastq preprocessing
 #### Cell Ranger multi
 Input : Fastq files <br/>
