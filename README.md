@@ -1,11 +1,12 @@
 # CITE-seq-analysis_PTEN-project
 Deciphering the impact of PTEN-loss in T-cell Leukemogenesis:  A multimodal single-cell analysis
+
 If you have any questions on this analysis, please contact [Ngoc Chau Pham](ngoc-chau.pham@univ-amu.fr)
 
 ---
 
 ### Overview
-This repository contains instructions and material to reproduce the analysis. Source code is available in this github repository. Required data and builded Docker/singularity images are available respectively in SRA/GEO and Zenodo. Instructions to reproduce the analysis are provided in the different subdirectories:
+This repository contains instructions and material to reproduce the analysis. Source code is available in this github repository. Required data and builded Docker/singularity images are available in Zenodo. Instructions to reproduce the analysis are provided in the different subdirectories:
 
 - Fastq preprocessing is discribed in the 01_FASTQ_Preprocessing folder <br/>
 In order to re do Fastq preprocessing you can follow guidelines and script here : [01_FASTQ_Preprocessing](01_FASTQ_Preprocessing/README.md)
@@ -35,5 +36,5 @@ In order to re do VDJ Analysis you can follow guidelines and script here : [03_V
 - Seurat rmd script to reproduce the preprocessing can be found [here](02_Seurat_analysis/01_Script/Experiment_preprocessing.Rmd), analysis rmd script [here](02_Seurat_analysis/01_Script/Experiment_analysis.Rmd) and the script to only generate figures [here](02_Seurat_analysis/01_Script/Figures.Rmd)
 
 #### Docker and Singularity images
-Singularity/Docker images and Robj are all availabe in [Zenodo](https://doi.org/10.5281/zenodo.4636520)
+Singularity/Docker images and Robj are all availabe in [Zenodo]([https://doi.org/10.5281/zenodo.4636520](https://zenodo.org/uploads/10671667))
 Singularity/Docker images and Robj are all availabe in Zenodo
