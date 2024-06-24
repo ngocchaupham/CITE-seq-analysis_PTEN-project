@@ -39,7 +39,7 @@ export WORKING_DIR=/home/pham/workspace/Pten
 Docker image file is stored on Zenodo :
 
 ```bash
-# To download Seurat301v2
+# To download Seurat501
 wget -P $WORKING_DIR/Images/Docker https://zenodo.org/uploads/10671667/files/sc_analysis_2.tar
 ```
 Load docker image
@@ -48,7 +48,7 @@ docker load < $WORKING_DIR/Images/Docker/sc_analysis_2.tar
 ```
 
 #### Download data
-The fastq preprocessed data are already in this github (MycPten/02_Seurat_analysis/03_Data), alternatively you can download different files to start the analysis at different entry point:
+The fastq preprocessed data are already in this github (Pten/02_Seurat_analysis/03_Data), alternatively you can download different files to start the analysis at different entry point:
 - Experiment_preprocessing.rmd
   - Files after Fastq Preprocessing (count matrix) are already in this repository
   - Preprocessed Seurat objects of each replicate
