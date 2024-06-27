@@ -33,7 +33,7 @@ Singularity image.tar files are stored on Zenodo.
 ```bash
 #Download the singularity images
 # To download CellRanger
-wget -P $WORKING_DIR/Images/Singularity/Pten_Cellranger https://zenodo.org/uploads/10671667/
+wget -P $WORKING_DIR/Docker/cellrange720 https://zenodo.org/uploads/10671667/
 
 ```
 #### Launch Singularity images
@@ -57,17 +57,17 @@ and it also produce an html report.
 To run cell ranger:
 ```bash
 # Build images
-singularity build cellranger720.sif docker-archive:$WORKING_DIR/Images/Singularity/Pten_Cellranger/cellranger720.tar
+singularity build cellranger720.sif docker-archive:$WORKING_DIR/Docker/cellrange720/cellranger720.tar
 # Launch singularity image
-singularity shell $WORKING_DIR/Images/Singularity/Pten_Cellranger/cellranger720.sif
+singularity shell $WORKING_DIR/Docker/cellrange720/cellranger720.sif
 bash
 
 #Go to the output directory
-cd  $WORKING_DIR/01_FASTQ_Preprocessing/02_Output
+cd  $WORKING_DIR/PTEN/02_Preprocessing/cellranger702
 
 #Run CellRanger
 #replace by good link to file
 nohup /usr/local/share/cellranger/cellranger-7.2.0/cellranger multi --id=the_name_of_the_output_file --csv=$WORKING_DIR/01_FASTQ_Preprocessing/data/name_of_config_file.csv --localmem=256
 
 ```
-Once the analysis is done, you should get result files in the WORKING_DIR/01_FASTQ_Preprocessing/02_Output folder
+Once the analysis is done, you should get result files in the WORKING_DIR/PTEN/02_Preprocessing/cellranger702 folder
