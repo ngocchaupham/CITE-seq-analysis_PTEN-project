@@ -3,7 +3,7 @@
 This folder contain the instructions and material to reproduce fastq pre-processing. Singularity images are respectively available Zenodo. Intructions to reproduce the analysis are provided below.
 To reproduce the analysis, you have to first, prepare the environments (see "Prerequisites" section below), then execute the analysis described in the "Run the analysis" section below.
 
-If you don't want to redo data pre-processing you can directly go to [02_Seurat_analysis](02_Seurat_analysis/README.md)
+If you don't want to redo data pre-processing you can directly go to [02_Seurat_analysis](CITE-seq-analysis_PTEN-project/02_Seurat_analysis/README.md)
 
 ---
 
