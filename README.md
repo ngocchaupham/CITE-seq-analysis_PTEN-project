@@ -17,15 +17,10 @@ In order to re do VDJ Analysis you can follow guidelines and script here : [03_V
 ---
 
 ### Data Availability
-#### Fastq preprocessing
-- All Cell Ranger Html report can be [found here](01_FASTQ_Preprocessing/Html_report/) :
 #### Seurat analysis
-- All Seurat Html report containing figures and analysis that we generated with R can be [found here](02_Seurat_analysis/02_Output/Html_report/) :
-- Seurat rmd script to reproduce the preprocessing can be found [here](02_Seurat_analysis/01_Script/Experiment_preprocessing.Rmd), analysis rmd script [here](02_Seurat_analysis/01_Script/Experiment_analysis.Rmd) and the script to only generate figures [here](02_Seurat_analysis/01_Script/Figures.Rmd)
-
+- Seurat rmd script to reproduce the preprocessing and analysis can be found [here](02_Seurat_analysis/01_Script/)
 #### VDJ analysis
-- All Seurat Html report containing figures and analysis that we generated with R can be [found here](02_Seurat_analysis/02_Output/Html_report/) :
-- VDJ analysis rmd script [here](03_VDJ_analysis/01_Script/Experiment_analysis.Rmd) and the script to only generate figures [here](03_VDJ_analysis/01_Script/Figures.Rmd)
+- VDJ analysis rmd script [here](03_VDJ_analysis/01_Script)
 
 #### Docker and Singularity images
 Singularity/Docker images and Robj are all availabe in [Zenodo](https://zenodo.org/uploads/10671667)
