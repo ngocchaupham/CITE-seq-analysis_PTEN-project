@@ -1,0 +1,62 @@
+---
+title: "unsubset230303"
+output: html_document
+date: "2024-03-25"
+---
+```{r}
+set.seed(1234)
+source("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/CHAU/Functions/Mito-ribo_visualisation.R")
+```
+
+```{r}
+load(file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/unsubset_20230320.Robj")
+```
+
+```{r}
+#Subset WT 
+Idents(unsubset_230320) <- "MULTI_ID"
+WT.230320 <- subset(unsubset_230320, idents = "Thymus-83")
+```
+
+```{r}
+DefaultAssay(WT.230320) <- 'RNA'
+WT.230320 <- NormalizeData(WT.230320) %>% FindVariableFeatures() %>% ScaleData() %>% RunPCA(npcs = 50)
+DefaultAssay(WT.230320) <- 'ADT'
+VariableFeatures(WT.230320) <- rownames(WT.230320[["ADT"]])
+WT.230320 <- NormalizeData(WT.230320, normalization.method = 'CLR', margin = 2)
+WT.230320 <-ScaleData(WT.230320, assay='ADT',verbose = FALSE, do.center = TRUE)
+WT.230320 <-RunPCA(WT.230320, assay='ADT', reduction.name = 'apca', seed.use = 1234, npcs = 14)
+# Identify multimodal neighbors. These will be stored in the neighbors layers, 
+WT.230320 <- FindMultiModalNeighbors(
+  WT.230320, reduction.list = list("pca", "apca"), 
+  dims.list = list(1:43, 1:11), modality.weight.name = c("RNA.weight", "ADT.weight"))
+WT.230320 <- RunUMAP(WT.230320, nn.name = "weighted.nn", reduction.name = "wnn.umap", reduction.key = "wnnUMAP_", seed.use = 1234)
+WT.230320 <- FindClusters(WT.230320, graph.name = "wsnn", algorithm = 1, resolution = 2, verbose = FALSE, random.seed = 1234)
+```
+
+```{r}
+DimPlot(WT.230320, reduction = "wnn.umap", group.by = "wsnn_res.2", label = T, label.size = 6)
+```
+
+
+```{r, fig.width=14, fig.height=6, warning=FALSE, message=FALSE, error=FALSE}
+FeaturePlot(WT.230320, reduction = "wnn.umap", features = c("adt_CD25","Il2ra","Mki67","adt_CD8","adt_CD4","adt_CD3","adt_CD62L","adt_CD69","Myc","adt_TCRgd","Rag1","adt_CCR7")) & scale_colour_gradientn(colours = (viridis::rocket(10, direction = -1)))
+```
+```{r, message=FALSE}
+DefaultAssay(WT.230320)<-"RNA"
+  #Calcul percent mito per cell
+  WT.230320[["percent.mt"]] <- PercentageFeatureSet(WT.230320, pattern = "^mt-" )
+  #Calcul percent ribo per cells
+  WT.230320[["percent.ribo"]] <- PercentageFeatureSet(WT.230320, pattern = "^Rpl|^Rps")
+FeaturePlot(WT.230320, reduction = "wnn.umap", features = "percent.mt", max.cutoff = 15 )& scale_colour_gradientn(colours = (viridis::rocket(10, direction = -1)))
+FeatureScatter(WT.230320, feature1 = "percent.ribo", feature2 = "percent.mt")
+```
+
+```{r,fig.width=7, fig.height=10, warning=FALSE, message=FALSE, error=FALSE}
+Idents(WT.230320)<-"wsnn_res.2"
+WT.230320@active.ident <- factor(WT.230320@active.ident,levels=c("3","12","11","0","7","6","5","1","2","4","13","10","8","14","9"))
+genes <- c("Il2ra","Ptcra","Top2a","Mki67","Rag1","Cd8a","Cd4","Ccr9","Itm2a","adt_CD69","Ccr7","S1pr1","Sell","Cxcr3","Ccl25","Gzma","Nkg7","Klrc1","Trdc","adt_TCRgd","adt_CCR7","adt_CD25","adt_CD4","adt_CD8")
+DotPlot(WT.230320, features = genes) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) + scale_colour_gradientn(colours = (viridis(4))) + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis() + coord_flip()+ labs(title = "Expression of marker genes by clusters")
+
+```
+

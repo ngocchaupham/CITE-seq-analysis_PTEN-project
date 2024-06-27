@@ -1,0 +1,193 @@
+---
+title: "test"
+output: html_document
+date: "2024-02-23"
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(plotly)
+library(dplyr)
+library(DT)
+library(viridisLite)
+library(viridis)
+library(RColorBrewer)
+library(scigenex)
+scigenex::set_verbosity(0)
+library(ComplexHeatmap)
+library(tibble)
+library(circlize)
+library(paletteer)
+library(tidyverse)
+library(AUCell)
+library(clusterProfiler)
+library(enrichplot)
+library(gridExtra)
+#BiocManager::install("org.Mm.eg.db")
+# Set the random number seed
+set.seed(1234)
+```
+
+#Analysis for DP Cells subset
+```{r}
+# DP populations subset : 
+load(file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/miceWT_2023_merged.Robj")
+VlnPlot(miceWT, features = c('adt_CD8', 'adt_CD4'), group.by = "manual.annotation") & geom_hline(yintercept = 2, linetype ="dashed", size = 1, color="black")
+VlnPlot(miceWT, features = c('Cd4', 'Cd8a'), group.by = "manual.annotation") & geom_hline(yintercept = 0.5, linetype ="dashed", size = 1, color="black")
+
+DP_WT_Cells <- WhichCells(object = miceWT, expression = adt_CD8 > 2 & adt_CD4 > 2, slot = "data", assay = "ADT")
+DP_WT <- subset(miceWT, cells = DP_WT_Cells)
+
+DP_WT <- FindVariableFeatures(object = DP_WT, assay = "RNA", selection.method = "vst", nfeatures = 2000)
+DP_WT <- ScaleData(DP_WT,assay="RNA",verbose = FALSE, do.center = TRUE)
+
+
+DP_WT <- RunPCA(object = DP_WT,
+                    assay = "RNA",
+                    verbose = FALSE, 
+                    seed.use = 1234,
+                    npcs = 20)
+ElbowPlot(DP_WT, ndims = 20, reduction = "pca") 
+ProjectDim(DP_WT, reduction = "pca", dims.print = 1:20, nfeatures.print = 10)
+
+# Select informative genes
+DP_genes<- select_genes(DP_WT,
+                              k = 20,
+                              distance_method = "pearson",
+                              which_slot = "data",
+                              row_sum=2)
+# Run MCL
+##Reciprocal neighborhood
+DP_scigenex_reci <- gene_clustering(DP_genes,
+                                 s = 5,
+                                 threads = 2,
+                                 inflation = 1.5,
+                                 method = "reciprocal_neighborhood")
+# ##Closest neighborhood
+# DP_scigenex_closest <- gene_clustering(DP_genes,
+#                                  s = 5,
+#                                  threads = 2,
+#                                  inflation = 2,
+#                                  method = "closest_neighborhood")
+
+DP_scigenex_reci <- DP_scigenex_reci[cluster_stats(DP_scigenex_reci)$sd_total > 0.15, ] 
+DP_scigenex_reci <- DP_scigenex_reci[clust_size(DP_scigenex_reci)>3,]
+DP_scigenex_reci <- rename_clust(DP_scigenex_reci)
+DP_scigenex_reci <- top_genes(DP_scigenex_reci)
+plot_ggheatmap(DP_scigenex_reci, 
+               use_top_genes = FALSE,
+               ident=Idents(DP_WT))+ ggtitle("Heatmap of Co-Expressed Gene Modules Identified by SciGeneX (k = 20, method = reciprocal_neighborhood, inflation= 1.5")
+nclust(DP_scigenex_reci)
+#Check the statistics
+plot_cluster_stats(cluster_stats(DP_scigenex_reci)) + 
+ ggplot2::theme(axis.text.y = ggplot2::element_blank(),
+                axis.text.x = element_text(angle=45, vjust = 0.5),
+                panel.grid = element_blank()) 
+```
+
+
+```{r}
+#Functional enrichment analysis
+
+# From ScigeneX
+DP_scigenex_reci <- enrich_go(DP_scigenex_reci, specie = "Mmusculus", ontology = "BP")
+plot_clust_enrichments(DP_scigenex_reci, gradient_palette=colors_for_gradient("Je1"), 
+                       floor=50,
+                       nb_go_term = 2) + 
+    theme(axis.text.y = element_text(size=12))
+
+
+
+background <- DP_WT@assays$RNA@features
+backgroundrow <- rownames(background)
+genecomprow <- DP_scigenex_reci@gene_clusters[["7"]]
+CPenrich <- enrichGO(gene= genecomprow, OrgDb = 'org.Mm.eg.db', ont="BP",keyType = "SYMBOL",universe = backgroundrow) # org.Mm.eg.db genome mouse
+
+#Visualization of enrich terms
+#dotplot(CPenrich, showCategory=20,color = "p.adjust",x="Count") #+ coord_flip()+theme(axis.text.x = element_text(angle = 90, hjust = 1))
+cnetplot(CPenrich, node_label="all", circular = T, colorEdge =T) + ggtitle("Concept network of genes module 7 and biological process")
+#CPenrich_ema <- pairwise_termsim(CPenrich)
+#emapplot(CPenrich_ema)
+#treeplot(CPenrich_ema, hclust_method = "average")
+```
+
+#Do UMAP of DP_WT using only the genes found by scigeneX
+```{r }
+# Combine all gene names into a single vector
+scigenex_features <- unlist(DP_scigenex_reci@gene_clusters)
+DP_WT <- ScaleData(DP_WT,assay="RNA",verbose = FALSE, do.center = TRUE)
+DP_WT <- RunPCA(DP_WT, features = scigenex_features, ncps = 20)
+ElbowPlot(DP_WT, ndims = 20, reduction = "pca")
+ProjectDim(DP_WT, reduction = "pca", dims.print = 1:20, nfeatures.print = 10)
+#Check deviation in function of PC
+DimPlot(DP_WT, reduction = "pca",dims = 6:7)
+DimPlot(DP_WT, reduction = "pca",dims = 7:8)
+DimPlot(DP_WT, reduction = "pca",dims = 9:10) 
+DefaultAssay(DP_WT) <- 'ADT'
+DP_WT <-ScaleData(DP_WT, assay='ADT',verbose = FALSE, do.center = TRUE)
+DP_WT <-RunPCA(DP_WT, assay='ADT', reduction.name = 'apca', seed.use = 1234, npcs = 14)
+ElbowPlot(DP_WT, ndims = 13, reduction = "apca") 
+
+DP_WT <- FindMultiModalNeighbors(DP_WT, reduction.list = list("pca", "apca"), 
+  dims.list = list(1:6, 1:13), modality.weight.name = c("RNA.weight", "ADT.weight"))
+
+DP_WT <- RunUMAP(DP_WT, reduction = 'pca', dims = 1:6, assay = 'RNA', 
+              reduction.name = 'rna.umap', reduction.key = 'rnaUMAP_', seed.use = 1234)
+DP_WT <- RunUMAP(DP_WT, reduction = 'apca', dims = 1:13, assay = 'ADT', 
+              reduction.name = 'adt.umap', reduction.key = 'adtUMAP_', seed.use = 1234)
+DP_WT <- RunUMAP(DP_WT, nn.name = "weighted.nn", reduction.name = "wnn.umap", reduction.key = "wnnUMAP_", seed.use = 1234)
+DP_WT <- FindClusters(DP_WT, graph.name = "wsnn", algorithm = 3, resolution = c(0.4 ,0.5 ,0.6, 0.8, 1.0, 1.4), verbose = FALSE, random.seed = 1234)
+#To compare 
+p1 <- DimPlot(DP_WT, reduction = "rna.umap", group.by = "wsnn_res.1", label = T, label.size = 6, repel = T) + ggtitle("RNA")
+p2 <- DimPlot(DP_WT, reduction = "adt.umap", group.by = "wsnn_res.1", label = T, label.size = 6, repel = T) + ggtitle("ADT")
+p3 <- DimPlot(DP_WT, reduction = "wnn.umap", group.by = "wsnn_res.1", label = T, label.size = 6, repel = T) + ggtitle("WNN")
+p1 + p2 + p3 & NoLegend() & theme(plot.title = element_text(hjust = 0.5))
+
+Idents(DP_WT) <- "wsnn_res.1"
+DimPlot(DP_WT, reduction = "wnn.umap", group.by = "wsnn_res.1", label = T, label.size = 6, repel = T)
+
+
+```
+
+
+#Save object 
+```{r}
+save(DP_WT, file= "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/DPbalbc_WT.Robj")
+save(DP_scigenex_reci, file= "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/DP_scigenex_reci.Robj" )
+```
+
+#Gene sets
+```{r}
+exprMatrix <- DP_WT@assays$RNA$data
+geneSets <- DP_scigenex_reci@gene_clusters
+```
+
+#Calculate Gene Set Activities
+```{r}
+# Build the rankings of the genes across cells (which genes are being expressed)
+geneRankings <- AUCell_buildRankings(exprMatrix, plotStats=TRUE)
+plotGeneCount(exprMatrix)
+# Calculate the AUC for each gene set
+aucellScores <- AUCell_calcAUC(geneSets, geneRankings)
+```
+
+##Adding AUCell scores to merged Object (bc.combined.cc)
+```{r}
+#Extract the AUCell scores matrix
+aucScoresMatrix <- aucellScores@assays@data$AUC
+# Create a new assay object with the matrix
+AUC <- CreateAssayObject(counts = aucScoresMatrix)
+DP_WT[['AUC']] <- AUC
+
+VlnPlot(DP_WT, features = '1', assay = 'AUC', pt.size = 0.1) #11,12 : DPblast - cell cycle (phase G2/M )
+VlnPlot(DP_WT, features = '2', assay = 'AUC', pt.size = 0.1) # Ribo genes
+VlnPlot(DP_WT, features = '3', assay = 'AUC', pt.size = 0.1) # 11,12 : DPblast - cell cycle : phase S - DNA replcation, ...
+VlnPlot(DP_WT, features = '4', assay = 'AUC', pt.size = 0.1) # cell motility (maintenance of location in cell ) and exprimed in almost cells (but down regulated in 8,9,10)
+VlnPlot(DP_WT, features = '5', assay = 'AUC', pt.size = 0.1)# 11 : DPblast
+VlnPlot(DP_WT, features = '6', assay = 'AUC', pt.size = 0.1) # exprimed in almost cells (but specially high exprssion in 1,11,12)
+```
+

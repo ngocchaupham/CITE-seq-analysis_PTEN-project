@@ -1,0 +1,360 @@
+---
+title: "thymus_WT_DP2021"
+output: html_document
+date: "2024-02-06"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(plotly)
+library(dplyr)
+library(DT)
+library(viridisLite)
+library(viridis)
+library(RColorBrewer)
+library(scigenex)
+scigenex::set_verbosity(0)
+library(ComplexHeatmap)
+library(tibble)
+library(circlize)
+library(paletteer)
+library(tidyverse)
+library(AUCell)
+library(GSEABase)
+# Set the random number seed
+set.seed(1234)
+```
+
+```{r}
+Seurat <- readRDS(file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/ISITHYD/workspace/abVSgd/05_Output/02_Seurat_analysis/papier/zenodo/Dataset2.rds")
+thymus <- UpdateSeuratObject(Seurat)
+```
+
+#Old annotation
+```{r}
+Idents(thymus) <- "RNA_snn_res.0.42"
+thymus@meta.data$annotation = "nothing"
+thymus@meta.data[WhichCells(thymus, slot = "RNA_snn_res.0.42", idents = c("0","8")),]$annotation = "DPsmall"
+thymus@meta.data[WhichCells(thymus, slot = "RNA_snn_res.0.42", idents = "1"),]$annotation = "DN3a"
+thymus@meta.data[WhichCells(thymus, slot = "RNA_snn_res.0.42", idents = "2"),]$annotation = "DN3b and DN4"
+thymus@meta.data[WhichCells(thymus, slot = "RNA_snn_res.0.42", idents = "3"),]$annotation = "DPCD69+"
+thymus@meta.data[WhichCells(thymus, slot = "RNA_snn_res.0.42", idents = "4"),]$annotation = "DN1 and DN2"
+thymus@meta.data[WhichCells(thymus, slot = "RNA_snn_res.0.42", idents = "5"),]$annotation = "ISP and DPblast"
+thymus@meta.data[WhichCells(thymus, slot = "RNA_snn_res.0.42", idents = "6"),]$annotation = "SP"
+thymus@meta.data[WhichCells(thymus, slot = "RNA_snn_res.0.42", idents = "7"),]$annotation = "Tgd"
+DimPlot(thymus, group.by = "annotation", label = T)
+```
+
+#Test on the signatures of BalBC-OTII-WT
+```{r}
+Idents(thymus) <- "annotation"
+thymus@active.ident <- factor(thymus@active.ident,levels=c("DN1 and DN2","DN3a","DN3b and DN4","ISP and DPblast","DPsmall","DPCD69+","SP","Tgd"))
+
+DoHeatmap(thymus, features = c(genes_module_1,genes_module_2,genes_module_3,genes_module_4,genes_module_5,genes_module_6,genes_module_7,genes_module_8,genes_module_9,genes_module_10,genes_module_11,genes_module_12,genes_module_13), raster = TRUE)
+```
+
+#New research of scigenex signatures on the thymus WT (D.P) object
+#k=50, inflation=2
+```{r}
+# Select informative genes
+thymusWT_scigenex50.2 <- select_genes(thymus,
+                              k = 50,
+                              distance_method = "pearson",
+                              which_slot = "data",
+                              row_sum=2)
+
+# Run MCL
+thymusWT_scigenex50.2 <- gene_clustering(thymusWT_scigenex50.2,
+                                 s = 5,
+                                 threads = 2,
+                                 inflation = 2)
+thymusWT_scigenex50.2@gene_clusters
+#Singletons filtered
+thymusWT_scigenex50.2 <- thymusWT_scigenex50.2[clust_size(thymusWT_scigenex50.2)>6,]
+nclust(thymusWT_scigenex50.2)
+plot_cluster_stats(cluster_stats(thymusWT_scigenex50.2)) + 
+ ggplot2::theme(axis.text.y = ggplot2::element_blank(),
+                axis.text.x = element_text(angle=45, vjust = 0.5),
+                panel.grid = element_blank())
+thymusWT_scigenex50.2 <- thymusWT_scigenex50.2[cluster_stats(thymusWT_scigenex50.2)$sd_total > 0.1, ] 
+thymusWT_scigenex50.2 <- rename_clust(thymusWT_scigenex50.2)
+plot_cluster_stats(cluster_stats(thymusWT_scigenex50.2)) + 
+ ggplot2::theme(axis.text.y = ggplot2::element_blank(),
+                axis.text.x = element_text(angle=45, vjust = 0.5),
+                panel.grid = element_blank())
+nclust(thymusWT_scigenex50.2)
+
+#Visualization
+Idents(thymus) <- "annotation"
+thymus@active.ident <- factor(thymus@active.ident,levels=c("DN1 and DN2","DN3a","DN3b and DN4","ISP and DPblast","DPsmall","DPCD69+","SP","Tgd"))
+plot_ggheatmap(thymusWT_scigenex50.2, 
+               use_top_genes = FALSE,
+               ident=Idents(thymus)) + ggtitle("Heatmap by cell subtypes (k= 50, inflation = 2)")
+```
+
+#k=100, inflation=2
+```{r}
+# Select informative genes
+thymusWT_scigenex100.2 <- select_genes(thymus,
+                              k = 100,
+                              distance_method = "pearson",
+                              which_slot = "data",
+                              row_sum=2)
+
+# Run MCL
+thymusWT_scigenex100.2 <- gene_clustering(thymusWT_scigenex100.2,
+                                 s = 5,
+                                 threads = 2,
+                                 inflation = 2)
+thymusWT_scigenex100.2@gene_clusters
+#Singletons filtered
+thymusWT_scigenex100.2 <- thymusWT_scigenex100.2[clust_size(thymusWT_scigenex100.2)>6,]
+nclust(thymusWT_scigenex100.2)
+plot_cluster_stats(cluster_stats(thymusWT_scigenex100.2)) + 
+ ggplot2::theme(axis.text.y = ggplot2::element_blank(),
+                axis.text.x = element_text(angle=45, vjust = 0.5),
+                panel.grid = element_blank())
+thymusWT_scigenex100.2 <- thymusWT_scigenex100.2[cluster_stats(thymusWT_scigenex100.2)$sd_total > 0.1, ] 
+thymusWT_scigenex100.2 <- rename_clust(thymusWT_scigenex100.2)
+plot_cluster_stats(cluster_stats(thymusWT_scigenex100.2)) + 
+ ggplot2::theme(axis.text.y = ggplot2::element_blank(),
+                axis.text.x = element_text(angle=45, vjust = 0.5),
+                panel.grid = element_blank())
+nclust(thymusWT_scigenex100.2)
+
+#Visualization
+Idents(thymus) <- "annotation"
+thymus@active.ident <- factor(thymus@active.ident,levels=c("DN1 and DN2","DN3a","DN3b and DN4","ISP and DPblast","DPsmall","DPCD69+","SP","Tgd"))
+plot_ggheatmap(thymusWT_scigenex100.2, 
+               use_top_genes = FALSE,
+               ident=Idents(thymus)) + ggtitle("Heatmap by cell subtypes (k= 100, inflation = 2)") 
+```
+
+#k = 10, inflation= 1.8
+```{r}
+# Select informative genes
+thymusWT_scigenex10 <- select_genes(thymus,
+                              k = 10,
+                              distance_method = "pearson",
+                              which_slot = "data",
+                              row_sum=2)
+
+# Run MCL
+thymusWT_scigenex10.1.8 <- gene_clustering(thymusWT_scigenex10,
+                                 s = 5,
+                                 threads = 2,
+                                 inflation = 1.8)
+
+#Singletons filtered
+thymusWT_scigenex10.1.8 <- thymusWT_scigenex10.1.8[clust_size(thymusWT_scigenex10.1.8)>6,]
+nclust(thymusWT_scigenex10.1.8)
+plot_cluster_stats(cluster_stats(thymusWT_scigenex10.1.8)) + 
+ ggplot2::theme(axis.text.y = ggplot2::element_blank(),
+                axis.text.x = element_text(angle=45, vjust = 0.5),
+                panel.grid = element_blank())
+thymusWT_scigenex10.1.8 <- thymusWT_scigenex10.1.8[cluster_stats(thymusWT_scigenex10.1.8)$sd_total > 0.1, ] 
+thymusWT_scigenex10.1.8 <- rename_clust(thymusWT_scigenex10.1.8)
+plot_cluster_stats(cluster_stats(thymusWT_scigenex10.1.8)) + 
+ ggplot2::theme(axis.text.y = ggplot2::element_blank(),
+                axis.text.x = element_text(angle=45, vjust = 0.5),
+                panel.grid = element_blank())
+nclust(thymusWT_scigenex10.1.8)
+
+#Visualization
+Idents(thymus) <- "annotation"
+thymus@active.ident <- factor(thymus@active.ident,levels=c("DN1 and DN2","DN3a","DN3b and DN4","ISP and DPblast","DPsmall","DPCD69+","SP","Tgd"))
+plot_ggheatmap(thymusWT_scigenex10.1.8, 
+               use_top_genes = FALSE,
+               ident=Idents(thymus)) + ggtitle("Heatmap by cell subtypes (k= 10, inflation = 1.8)") 
+```
+
+#k = 10, inflation= 2
+```{r}
+# Run MCL
+thymusWT_scigenex10.2 <- gene_clustering(thymusWT_scigenex10,
+                                 s = 5,
+                                 threads = 2,
+                                 inflation = 2)
+
+#Singletons filtered
+thymusWT_scigenex10.2 <- thymusWT_scigenex10.2[clust_size(thymusWT_scigenex10.2)>6,]
+nclust(thymusWT_scigenex10.2)
+plot_cluster_stats(cluster_stats(thymusWT_scigenex10.2)) + 
+ ggplot2::theme(axis.text.y = ggplot2::element_blank(),
+                axis.text.x = element_text(angle=45, vjust = 0.5),
+                panel.grid = element_blank())
+thymusWT_scigenex10.2 <- thymusWT_scigenex10.2[cluster_stats(thymusWT_scigenex10.2)$sd_total > 0.1, ] 
+thymusWT_scigenex10.2 <- rename_clust(thymusWT_scigenex10.2)
+plot_cluster_stats(cluster_stats(thymusWT_scigenex10.2)) + 
+ ggplot2::theme(axis.text.y = ggplot2::element_blank(),
+                axis.text.x = element_text(angle=45, vjust = 0.5),
+                panel.grid = element_blank())
+nclust(thymusWT_scigenex10.2)
+
+#Visualization
+Idents(thymus) <- "annotation"
+thymus@active.ident <- factor(thymus@active.ident,levels=c("DN1 and DN2","DN3a","DN3b and DN4","ISP and DPblast","DPsmall","DPCD69+","SP","Tgd"))
+plot_ggheatmap(thymusWT_scigenex10.2, 
+               use_top_genes = FALSE,
+               ident=Idents(thymus)) + ggtitle("Heatmap by cell subtypes (k= 10, inflation = 2)") 
+```
+
+#k = 10, inflation= 3
+```{r}
+
+# Run MCL
+thymusWT_scigenex10.3 <- gene_clustering(thymusWT_scigenex10,
+                                 s = 5,
+                                 threads = 2,
+                                 inflation = 3)
+
+#Singletons filtered
+thymusWT_scigenex10.3 <- thymusWT_scigenex10.3[clust_size(thymusWT_scigenex10.3)>6,]
+nclust(thymusWT_scigenex10.4)
+plot_cluster_stats(cluster_stats(thymusWT_scigenex10.4)) + 
+ ggplot2::theme(axis.text.y = ggplot2::element_blank(),
+                axis.text.x = element_text(angle=45, vjust = 0.5),
+                panel.grid = element_blank())
+thymusWT_scigenex10.3 <- thymusWT_scigenex10.3[cluster_stats(thymusWT_scigenex10.3)$sd_total > 0.1, ] 
+thymusWT_scigenex10.4 <- rename_clust(thymusWT_scigenex10.4)
+plot_cluster_stats(cluster_stats(thymusWT_scigenex10.4)) + 
+ ggplot2::theme(axis.text.y = ggplot2::element_blank(),
+                axis.text.x = element_text(angle=45, vjust = 0.5),
+                panel.grid = element_blank())
+nclust(thymusWT_scigenex10.4)
+
+#Visualization
+Idents(thymus) <- "annotation"
+thymus@active.ident <- factor(thymus@active.ident,levels=c("DN1 and DN2","DN3a","DN3b and DN4","ISP and DPblast","DPsmall","DPCD69+","SP","Tgd"))
+plot_ggheatmap(thymusWT_scigenex10.3, 
+               use_top_genes = FALSE,
+               ident=Idents(thymus)) + ggtitle("Heatmap by cell subtypes (k=10, inflation = 3)") 
+```
+
+
+#k = 10, inflation= 4
+```{r}
+# Select informative genes
+thymusWT_scigenex10.1.8 <- select_genes(thymus,
+                              k = 10,
+                              distance_method = "pearson",
+                              which_slot = "data",
+                              row_sum=2)
+
+# Run MCL
+thymusWT_scigenex10.4 <- gene_clustering(thymusWT_scigenex10,
+                                 s = 5,
+                                 threads = 2,
+                                 inflation = 4)
+
+#Singletons filtered
+thymusWT_scigenex10.4 <- thymusWT_scigenex10.4[clust_size(thymusWT_scigenex10.4)>6,]
+nclust(thymusWT_scigenex10.4)
+plot_cluster_stats(cluster_stats(thymusWT_scigenex10.4)) + 
+ ggplot2::theme(axis.text.y = ggplot2::element_blank(),
+                axis.text.x = element_text(angle=45, vjust = 0.5),
+                panel.grid = element_blank())
+thymusWT_scigenex10.4 <- thymusWT_scigenex10.4[cluster_stats(thymusWT_scigenex10.4)$sd_total > 0.1, ] 
+thymusWT_scigenex10.4 <- rename_clust(thymusWT_scigenex10.4)
+plot_cluster_stats(cluster_stats(thymusWT_scigenex10.4)) + 
+ ggplot2::theme(axis.text.y = ggplot2::element_blank(),
+                axis.text.x = element_text(angle=45, vjust = 0.5),
+                panel.grid = element_blank())
+nclust(thymusWT_scigenex10.4)
+
+#Visualization
+Idents(thymus) <- "annotation"
+thymus@active.ident <- factor(thymus@active.ident,levels=c("DN1 and DN2","DN3a","DN3b and DN4","ISP and DPblast","DPsmall","DPCD69+","SP","Tgd"))
+plot_ggheatmap(thymusWT_scigenex10.4, 
+               use_top_genes = FALSE,
+               ident=Idents(thymus)) + ggtitle("Heatmap by cell subtypes (k=10, inflation = 4)") 
+```
+
+#k = 10, inflation= 5
+```{r}
+# Run MCL
+thymusWT_scigenex10.5 <- gene_clustering(thymusWT_scigenex10,
+                                 s = 5,
+                                 threads = 2,
+                                 inflation = 5)
+
+#Singletons filtered
+thymusWT_scigenex10.5 <- thymusWT_scigenex10.5[clust_size(thymusWT_scigenex10.5)>6,]
+nclust(thymusWT_scigenex10.5)
+plot_cluster_stats(cluster_stats(thymusWT_scigenex10.5)) + 
+ ggplot2::theme(axis.text.y = ggplot2::element_blank(),
+                axis.text.x = element_text(angle=45, vjust = 0.5),
+                panel.grid = element_blank())
+thymusWT_scigenex10.5 <- thymusWT_scigenex10.5[cluster_stats(thymusWT_scigenex10.5)$sd_total > 0.1, ] 
+thymusWT_scigenex10.5 <- rename_clust(thymusWT_scigenex10.5)
+plot_cluster_stats(cluster_stats(thymusWT_scigenex10.5)) + 
+ ggplot2::theme(axis.text.y = ggplot2::element_blank(),
+                axis.text.x = element_text(angle=45, vjust = 0.5),
+                panel.grid = element_blank())
+nclust(thymusWT_scigenex10.5)
+
+#Visualization
+Idents(thymus) <- "annotation"
+thymus@active.ident <- factor(thymus@active.ident,levels=c("DN1 and DN2","DN3a","DN3b and DN4","ISP and DPblast","DPsmall","DPCD69+","SP","Tgd"))
+plot_ggheatmap(thymusWT_scigenex10.5, 
+               use_top_genes = FALSE,
+               ident=Idents(thymus)) + ggtitle("Heatmap by cell types (k = 10,  inflation= 5)") 
+```
+Avec ces paramètres, on obtient une signature spécifique pour DN3a
+
+#k = 10, inflation= 8
+```{r}
+# Select informative genes
+thymusWT_scigenex10.1.8 <- select_genes(thymus,
+                              k = 10,
+                              distance_method = "pearson",
+                              which_slot = "data",
+                              row_sum=2)
+
+# Run MCL
+thymusWT_scigenex10.8 <- gene_clustering(thymusWT_scigenex10,
+                                 s = 5,
+                                 threads = 2,
+                                 inflation = 8)
+
+#Singletons filtered
+thymusWT_scigenex10.8 <- thymusWT_scigenex10.8[clust_size(thymusWT_scigenex10.8)>6,]
+nclust(thymusWT_scigenex10.8)
+plot_cluster_stats(cluster_stats(thymusWT_scigenex10.8)) + 
+ ggplot2::theme(axis.text.y = ggplot2::element_blank(),
+                axis.text.x = element_text(angle=45, vjust = 0.5),
+                panel.grid = element_blank())
+thymusWT_scigenex10.8 <- thymusWT_scigenex10.8[cluster_stats(thymusWT_scigenex10.8)$sd_total > 0.1, ] 
+thymusWT_scigenex10.8 <- rename_clust(thymusWT_scigenex10.8)
+plot_cluster_stats(cluster_stats(thymusWT_scigenex10.8)) + 
+ ggplot2::theme(axis.text.y = ggplot2::element_blank(),
+                axis.text.x = element_text(angle=45, vjust = 0.5),
+                panel.grid = element_blank())
+nclust(thymusWT_scigenex10.8)
+
+#Visualization
+Idents(thymus) <- "annotation"
+thymus@active.ident <- factor(thymus@active.ident,levels=c("DN1 and DN2","DN3a","DN3b and DN4","ISP and DPblast","DPsmall","DPCD69+","SP","Tgd"))
+plot_ggheatmap(thymusWT_scigenex10.8, 
+               use_top_genes = FALSE,
+               ident=Idents(thymus)) + ggtitle("Heatmap by cell subtypes (k=10, inflation = 8)") 
+```
+
+#Functional enrichment analysis
+```{r}
+
+thymusWT_scigenex10.5 <- enrich_go(thymusWT_scigenex10.5, specie = "Mmusculus", ontology = "BP")
+plot_clust_enrichments(thymusWT_scigenex10.5, gradient_palette=colors_for_gradient("Je1"), 
+                       floor=50,
+                       nb_go_term = 2) + 
+  theme(axis.text.y = element_text(size=12))
+```
+
+#Save object 
+```{r}
+save(thymusWT_scigenex10.5, file= "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/thymusWT_scigenex10.5.Robj")
+```
+

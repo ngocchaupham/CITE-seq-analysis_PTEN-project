@@ -1,0 +1,243 @@
+---
+title: "Tumor_cells_BC"
+output: html_document
+date: "2024-03-21"
+editor_options: 
+  chunk_output_type: inline
+---
+
+#Subset tumoral cells 
+```{r}
+#load(file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/merge_2023exp_reg_cc.Robj")
+Idents(bc.combined.cc) <-"annotation"
+Ptendel.mice <- subset(bc.combined.cc, idents = c("Thymus-PreTum early","Thymus-PreTum late","Thymus-Tum","Spleen-PreTum early","Spleen-PreTum late", "Spleen-Tum"))
+Idents(Ptendel.mice) <- "Myc_expression"
+Tumor.cells <- subset(Ptendel.mice, idents = c("Myc+"))
+
+Tumor.cells <- RunPCA(object = Tumor.cells,
+                    assay = "RNA",
+                    seed.use = 1234,
+                    npcs = 50)
+ElbowPlot(Tumor.cells, ndims = 50, reduction = "pca")
+## ADT
+DefaultAssay(Tumor.cells) <- 'ADT'
+VariableFeatures(Tumor.cells) <- rownames(Tumor.cells[["ADT"]])
+Tumor.cells <- NormalizeData(Tumor.cells, normalization.method = 'CLR', margin = 2) %>% 
+  ScaleData() %>% RunPCA(reduction.name = 'apca')
+
+Tumor.cells <- FindMultiModalNeighbors(
+  Tumor.cells, reduction.list = list("pca", "apca"), 
+  dims.list = list(1:42, 1:12), modality.weight.name = "RNA.weight")
+  
+Tumor.cells <- RunUMAP(Tumor.cells, nn.name = "weighted.nn", reduction.name = "wnn.umap", reduction.key = "wnnUMAP_", seed.use = 1234, n.neighbors = 30L, min.dist = 0.3)
+Tumor.cells <- FindClusters(Tumor.cells, graph.name = "wsnn", algorithm = 3, resolution = 2, verbose = FALSE, random.seed = 1234)
+ggplotly(DimPlot(Tumor.cells, reduction = "wnn.umap", group.by = "wsnn_res.2"))
+```
+
+
+```{r}
+aucScoresMatrix <- Tumor.cells@assays$AUC$data
+barcodes <- colnames(aucScoresMatrix)
+clusters <- Tumor.cells@meta.data[barcodes, "wsnn_res.2", drop = FALSE]
+aucScoresMatrix.mergedObj.vs.clusters <- cbind(clusters, t(aucScoresMatrix))
+aucScoresMatrix.mergedObj.vs.clusters <- aucScoresMatrix.mergedObj.vs.clusters[rowSums(is.na(aucScoresMatrix.mergedObj.vs.clusters)) == 0, ]
+# Calculer la médiane pour chaque colonne, groupée par cluster
+auc.median.mergedObj <- aucScoresMatrix.mergedObj.vs.clusters %>%
+  group_by(wsnn_res.2) %>%
+  summarise(across(everything(), median, na.rm = TRUE))
+auc.median.mergedObj <- data.frame(auc.median.mergedObj, row.names = 1)
+colnames(auc.median.mergedObj) <- paste0("sig.",c(1:13))
+
+adt.matrix.mergedObj <- GetAssayData(Tumor.cells, assay = "ADT", slot = "data")
+barcodes <- colnames(adt.matrix.mergedObj)
+clusters <- Tumor.cells@meta.data[barcodes, "wsnn_res.2", drop = FALSE]
+adt.matrix.mergedObj.vs.clusters <- cbind(clusters, t(adt.matrix.mergedObj))
+adt.matrix.mergedObj.vs.clusters <- adt.matrix.mergedObj.vs.clusters[rowSums(is.na(adt.matrix.mergedObj.vs.clusters)) == 0, ]
+# Calculer la médiane pour chaque colonne, groupée par cluster
+adt.median.mergedObj <- adt.matrix.mergedObj.vs.clusters %>%
+  group_by(wsnn_res.2) %>%
+  summarise(across(everything(), median, na.rm = TRUE))
+adt.median.mergedObj <- data.frame(adt.median.mergedObj, row.names = 1)
+
+```
+
+#Assign cell types to cells in bc.combined.cc
+```{r}
+#ggplotly(DimPlot(Tumor.cells, group.by = "wsnn_res.2", reduction = "wnn.umap", label =T, pt.size = 0.7))
+
+# AUC score
+p1 <- VlnPlot(Tumor.cells, features = "auc_1", group.by = "wsnn_res.2") +geom_hline(yintercept = 0.15, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+mature <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.1>0.15,])
+
+p2 <- VlnPlot(Tumor.cells, features = "auc_2", group.by = "wsnn_res.2") +geom_hline(yintercept = 0.055, linetype ="dashed", size = 1, color="black")
+
+p3 <- VlnPlot(Tumor.cells, features = "auc_3", group.by = "wsnn_res.2") +geom_hline(yintercept = 0.1, linetype ="dashed", size = 1, color="black")
+
+G2M <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.2>0.055,])# Cell cycle (many genes from G2M phase) - DPblast, some DN late
+S <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.3>0.1,])# Cell cycle (many genes from S & G2M phases) - DPblast, some DN late
+
+p4 <- VlnPlot(Tumor.cells, features = "auc_4", group.by = "wsnn_res.2") +geom_hline(yintercept = 0.6, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+Ribo.high <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.4>0.6,])# DN, DP69+, DPblast, DPsm-CD25+, SP4, SP8, Tgd
+Ribo.low <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.4>0.6,])#DP69int, DPsm, DPsm-CCR7+
+
+p5 <- VlnPlot(Tumor.cells, features = "auc_5", group.by = "wsnn_res.2") +geom_hline(yintercept = 0.1, linetype ="dashed", size = 1, color="black")# NK
+
+
+p6 <- VlnPlot(Tumor.cells, features = "auc_6", group.by = "wsnn_res.2") +geom_hline(yintercept = 0.2, linetype ="dashed", size = 1, color="red")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+dp <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.6>0.21,])# high in DPsm int in DPbl, low in mature cells (SP4,SP8, Tgd,NK)
+
+
+p8 <- VlnPlot(Tumor.cells, features = "auc_8", group.by = "wsnn_res.2") +geom_hline(yintercept = 0.07, linetype ="dashed", size = 1, color="red")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+DN.sig <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.8>0.07,])
+
+p9 <- VlnPlot(Tumor.cells, features = "auc_9", group.by = "wsnn_res.2") +geom_hline(yintercept = 0.2, linetype ="dashed", size = 1, color="black")
+NKT <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.9>0.2,])# NKT, (Tgd, Thelper)
+
+p7 <- VlnPlot(Tumor.cells, features = "auc_7", group.by = "wsnn_res.2") +geom_hline(yintercept = 0.1, linetype ="dashed", size = 1, color="black")
+cyto1 <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.7>0.1,])# Cyto1 a éventuellement merger avec cyto 2. Aussi le seuil pourrait etre rabaisser à 0.1?
+DimPlot(Tumor.cells, cells.highlight = cyto1, reduction = "wnn.umap", cols.highlight = "#DE2D26")
+p10 <- VlnPlot(Tumor.cells, features = "auc_10", group.by = "wsnn_res.2") +geom_hline(yintercept = 0.135, linetype ="dashed", size = 1, color="black")
+VlnPlot(Tumor.cells, features = "auc_10", group.by = "annotation") +geom_hline(yintercept = 0.135, linetype ="dashed", size = 1, color="black")
+cyto2 <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.10>0.135,])# Cytotoxique
+
+p11 <- VlnPlot(Tumor.cells, features = "auc_11", group.by = "wsnn_res.2") +geom_hline(yintercept = 0.5, linetype ="dashed", size = 1, color="black")
+immobile <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.11<0.5,]) #Cytoskeletal dynamics, Cell motility, high expression in almost cell types, lower expression in DPsm
+
+p12 <- VlnPlot(Tumor.cells, features = "auc_12", group.by = "wsnn_res.2") +geom_hline(yintercept = 0.075, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+Tcrg <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.12>0.075,])# Chains of receptor Tgd
+
+p13 <- VlnPlot(Tumor.cells, features = "auc_13", group.by = "wsnn_res.2") +geom_hline(yintercept = 0.1, linetype ="dashed", size = 1, color="black")
+MAIT <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.13>0.1,]) #MAIT or Tgd cells
+DimPlot(Tumor.cells, cells.highlight = WhichCells(Tumor.cells, idents = c("32","42")), reduction = "wnn.umap", cols.highlight = "#DE2D26")
+
+#ADT
+
+p.Cd25 <- VlnPlot(Tumor.cells, features = "adt_CD25", group.by = "wsnn_res.2")+geom_hline(yintercept = 0.8, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+CD25pos <- rownames(adt.median.mergedObj[adt.median.mergedObj$CD25>0.8,]) #DN, DPsm-CD25+
+
+
+p.Cd8 <- VlnPlot(Tumor.cells, features = "adt_CD8", group.by = "wsnn_res.2")+geom_hline(yintercept = 1.9, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+CD8pos <- rownames(adt.median.mergedObj[adt.median.mergedObj$CD8>1.9,])
+
+p.Cd4 <- VlnPlot(Tumor.cells, features = "adt_CD4", group.by = "wsnn_res.2")+geom_hline(yintercept = 1.8, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+CD4pos <- rownames(adt.median.mergedObj[adt.median.mergedObj$CD4>1.7,])
+
+DP <- intersect(dp,intersect(CD4pos,CD8pos))
+p.Cd3 <- VlnPlot(Tumor.cells, features = "adt_CD3", group.by = "wsnn_res.2")+geom_hline(yintercept = 0.5, linetype ="dashed", size = 1, color="black")
+T.mature <- rownames(adt.median.mergedObj[adt.median.mergedObj$CD3>0.5,])# SP4, SP8, Tgd
+T.immature <- rownames(adt.median.mergedObj[adt.median.mergedObj$CD3<0.5,]) #DN, DP and NK/NKT
+
+p.Tgd <- VlnPlot(Tumor.cells, features = "adt_TCRgd", group.by = "wsnn_res.2")+geom_hline(yintercept = 0.5, linetype ="dashed", size = 1, color="black")
+TCRgd <- rownames(adt.median.mergedObj[adt.median.mergedObj$TCRgd>0.5,])
+
+
+p.Cd69 <- VlnPlot(Tumor.cells, features = "adt_CD69", group.by = "wsnn_res.2")+geom_hline(yintercept = 0.04, linetype ="dashed", size = 1, color="red")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+CD69pos <- rownames(adt.median.mergedObj[adt.median.mergedObj$CD69>0.04,])
+
+
+p.Ccr7 <- VlnPlot(Tumor.cells, features = "adt_CCR7", group.by = "wsnn_res.2")+geom_hline(yintercept = 0.04, linetype ="dashed", size = 1, color="black")
+CCR7pos <- rownames(adt.median.mergedObj[adt.median.mergedObj$CCR7>0.04,])
+
+#Myc 
+p.Myc <- VlnPlot(Tumor.cells, features = "Cd8a", group.by = "wsnn_res.2", pt.size = 2) +geom_hline(yintercept = 0.2, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+#percent.mt
+FeaturePlot(Tumor.cells, features = "percent.mt", reduction="wnn.umap", max.cutoff = 10)& scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+FeatureScatter(Tumor.cells,feature1 = "percent.ribo", feature2 = "percent.mt", group.by = "wsnn_res.2")+geom_vline(xintercept = 5)+geom_hline(yintercept = 10) #Cluster 20  appears to contain dying cells
+VlnPlot(Tumor.cells, features = "percent.mt")
+```
+
+```{r}
+# Creating rules to annotate cells
+DN <- intersect(DN.sig,CD25pos)
+Tgd.mature <- intersect(TCRgd,Tcrg)
+Tgd.early <-setdiff(c(Tcrg,DN.sig), c(DN,Tgd.mature,DP))
+NK <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.5>0.1,])
+MAIT <- setdiff(rownames(auc.median.mergedObj[auc.median.mergedObj$sig.13>0.1,]),c(Tgd.early,Tgd.mature))
+DPblast <- intersect(union(G2M,S),DP)
+DP69 <- "11"
+DPsm <- setdiff(DP, c(DP69,DPblast))
+DPsmCCR7 <- intersect(DPsm, CCR7pos)
+SP8 <- setdiff(intersect(mature,CD8pos),c(DP69,Tgd.early,Tgd.mature, NK, MAIT))
+SP4 <- setdiff(intersect(mature,CD4pos), c(DP69,Tgd.early,Tgd.mature, NK, MAIT,SP8))
+CD4pos <-setdiff(CD4pos,c(SP8,SP4,Tgd.early))
+DPdyingcells <- "21"
+
+#26,8,13,12,17,28
+
+#Annotation of cells from rules 
+Idents(Tumor.cells) <- "wsnn_res.2"
+ #Tumor.cells@meta.data[Tumor.cells@meta.data[["wsnn_res.2"]],]$sig.annotation
+Tumor.cells@meta.data$Tumor.annotation = "unknown"
+
+Tumor.cells@meta.data[WhichCells(Tumor.cells,idents = DN),]$Tumor.annotation ="DN"
+Tumor.cells@meta.data[WhichCells(Tumor.cells,idents = DPblast),]$Tumor.annotation ="DPblast"
+Tumor.cells@meta.data[WhichCells(Tumor.cells,idents = DPsm),]$Tumor.annotation ="DPsm"
+Tumor.cells@meta.data[WhichCells(Tumor.cells,idents = DPsmCCR7),]$Tumor.annotation ="DPsmCCR7+"
+Tumor.cells@meta.data[WhichCells(Tumor.cells,idents = DP69),]$Tumor.annotation ="DP69"
+Tumor.cells@meta.data[WhichCells(Tumor.cells,idents = SP8),]$Tumor.annotation ="SP8"
+Tumor.cells@meta.data[WhichCells(Tumor.cells,idents = SP4),]$Tumor.annotation ="SP4"
+Tumor.cells@meta.data[WhichCells(Tumor.cells,idents = NK),]$Tumor.annotation ="NK"
+Tumor.cells@meta.data[WhichCells(Tumor.cells,idents = MAIT),]$Tumor.annotation ="MAIT"
+Tumor.cells@meta.data[WhichCells(Tumor.cells,idents = Tgd.early),]$Tumor.annotation ="Tgd early"
+Tumor.cells@meta.data[WhichCells(Tumor.cells,idents = Tgd.mature),]$Tumor.annotation ="Tgd mature"
+Tumor.cells@meta.data[WhichCells(Tumor.cells,idents = DPdyingcells),]$Tumor.annotation ="DP dying cells"
+ggplotly(DimPlot(Tumor.cells, reduction = "wnn.umap", group.by = "Tumor.annotation"))
+#Ppia intersting, absent in "dyding" cells
+
+table(Tumor.cells@meta.data$Tumor.annotation, Tumor.cells@meta.data$annotation )
+```
+
+```{r}
+ggplotly(DimPlot(Tumor.cells, reduction = "wnn.umap", group.by = "Tumor.annotation"))
+```
+
+```{r}
+#Markers of dying  cells 
+Idents(Tumor.cells) <- 'Tumor.annotation'
+cell.death.marks <- FindMarkers(Tumor.cells, ident.1 = 'DP dying cells' )
+cell.death.marks$gene <- rownames(cell.death.marks)
+unique_gene_annotation <- unique(gene_annotation[, c("Symbol", "Name")])
+#By clusters 
+cell.death.marks <- cell.death.marks %>%
+  left_join(y = unique_gene_annotation, by = c("gene" = "Symbol"))
+datatable(cell.death.marks,filter = 'top',options = list(pageLength = 15))
+genecomprow <- cell.death.marks %>%
+  slice_max(order_by = abs(avg_log2FC), n = 50)%>%
+  dplyr::pull(gene)
+```
+
+```{r}
+NKT.TCR <- TCRgenotype_all[with(TCRgenotype_all, grepl('.*TRAV11.*TRAJ18.*', CTgene)),]
+FeaturePlot(Tumor.cells, features = c("Nlr-p1c"), reduction ="wnn.umap")& scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+```
+

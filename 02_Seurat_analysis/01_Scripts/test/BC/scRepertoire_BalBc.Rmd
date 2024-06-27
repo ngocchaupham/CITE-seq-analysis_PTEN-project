@@ -1,0 +1,178 @@
+---
+title: "scRepertoire_BalBc"
+output: html_document
+date: "2024-03-08"
+editor_options: 
+  chunk_output_type: console
+---
+#Loading libraries 
+```{r}
+library(Seurat)
+library(scRepertoire)
+library(plotly)
+library(ggplot2)
+library(plotly)
+library(dplyr)
+library(tidyr)
+library(DT)
+library(paletteer)
+```
+
+#Loading and Processing contig data
+```{r}
+# Load VDJ data (one csv per run)
+Sample1 <- read.csv("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/02_Preprocessing/cellranger702/230320/230320/outs/per_sample_outs/230320/vdj_t/filtered_contig_annotations.csv")
+Sample2 <- read.csv("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/02_Preprocessing/cellranger702/230327/230327/outs/per_sample_outs/230327/vdj_t/filtered_contig_annotations.csv")
+Sample3 <- read.csv("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/02_Preprocessing/cellranger702/230303/230303/outs/per_sample_outs/230303/vdj_t/filtered_contig_annotations.csv")
+
+#Create a function to trim unwanted "-1" and append sample information before barcodes
+barcoder <- function(df,  trim="\\-1"){
+  df$barcode <- gsub(trim, "", df$barcode)
+  df
+}
+Sample1 <- barcoder(Sample1)
+Sample2 <- barcoder(Sample2)
+Sample3 <- barcoder(Sample3)
+#load(file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/merge_2023exp_reg_cc.Robj")
+#bc.combined.vdj <- bc.combined.cc
+contig_list <- list(Sample1, Sample2, Sample3)
+head(contig_list[[1]])
+```
+
+#Combining the Contigs
+```{r}
+combined <- combineTCR(contig_list,
+                       samples = c("230320","230327","230303"))  
+```
+
+#Visualizing Contigs
+```{r}
+#Quantify Clonotypes
+clonalQuant(combined, 
+            cloneCall="strict", 
+            chain = "both", 
+            scale = TRUE)
+#Distribution of clones by abundance
+clonalAbundance(combined, 
+                cloneCall = "gene", 
+                scale = FALSE)
+clonalAbundance(combined, cloneCall = "gene", scale = T)
+
+#Length distribution of the CDR3 sequences
+clonalLength(combined,
+             cloneCall = "aa",
+             chain = "both")
+clonalLength(combined, 
+             cloneCall="aa", 
+             chain = "TRA", 
+             scale = TRUE) 
+#Compare clones between samples
+clonalCompare(combined, 
+                  top.clones = 10, 
+                  samples = c("230320", "230327"), 
+                  cloneCall="aa", 
+                  graph = "alluvial")
+
+#Scatter plot comparing the two samples
+clonalScatter(combined, 
+              cloneCall ="gene", 
+              x.axis = "230303", 
+              y.axis = "230327",
+              dot.size = "total",
+              graph = "proportion")
+
+#Clonal space
+clonalHomeostasis(combined,
+                  cloneCall = "gene")
+
+
+# Ajuster la taille du texte
+par(cex.axis = 1.5)
+par(cex.lab = 4)
+
+vizGenes(combined[c(1,2)], 
+         x.axis = "TRBV",
+         y.axis = "TRAV",
+         plot = "heatmap", 
+         scale = FALSE)
+percentGenes(combined, 
+             chain = "TRA", 
+             gene = "Vgene")
+```
+
+#Add the clonal frequency and proportion
+```{r}
+Idents(bc.combined.vdj) <- "orig.ident"
+bc.combined.vdj <- combineExpression(combined,
+                                     bc.combined.vdj,
+                                     cloneCall = "gene")
+#Define color palette 
+colorblind_vector <- hcl.colors(n=7, palette = "inferno", fixup = TRUE)
+
+ggplotly(DimPlot(bc.combined.vdj, group.by = "CTgene", reduction = "wnn.umap") +
+    scale_color_manual(values=rev(colorblind_vector[c(1,3,4,5,7)])))
+
+#save(bc.combined.vdj, file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/scRepertoire.Robj")
+```
+
+```{r}
+#Adding annotation OTII status in metadata
+clonotype <- bc.combined.vdj@meta.data %>% 
+    pull(CTgene) %>% 
+    unique %>% 
+    sort
+
+
+OTII <- rownames(bc.combined.vdj@meta.data[with(bc.combined.vdj@meta.data, grepl('^TRAV14.*TRAJ31.*_.*TRBV12.*TRBJ2-4.*', CTgene) & !grepl('.*\\+.*', CTgene)),])
+OTIItrav <- rownames(bc.combined.vdj@meta.data[with(bc.combined.vdj@meta.data, grepl('^TRAV14.*TRAJ31.*_NA', CTgene)),])
+OTIItrbv <- rownames(bc.combined.vdj@meta.data[with(bc.combined.vdj@meta.data, grepl('^NA_TRBV12.*TRBJ2.*', CTgene) & !grepl('.*\\+.*', CTgene)),])
+OTIItrbv <- rownames(bc.combined.vdj@meta.data[with(bc.combined.vdj@meta.data, grepl('.*TRBV26.*TRBJ2-4.*', CTgene) & !grepl('.*\\+.*', CTgene)),])
+OTIIbiclonal <- rownames(bc.combined.vdj@meta.data[with(bc.combined.vdj@meta.data, grepl('^TRAV14.*TRAJ31.*TRBV12.*\\+.*TRBJ2-4.*', CTgene)),])
+unknown <- rownames(bc.combined.vdj@meta.data[which(is.na(bc.combined.vdj@meta.data$CTgene)),])
+nonOTII <- setdiff(rownames(bc.combined.vdj@meta.data),c(OTII,OTIItrav,OTIItrbv,OTIIbiclonal,unknown))
+
+bc.combined.vdj@meta.data$OTIIstatus <- "-"
+bc.combined.vdj@meta.data[OTII,]$OTIIstatus <- "OTII"
+bc.combined.vdj@meta.data[OTIItrav,]$OTIIstatus <- "OTII-TCRB incomplete"
+bc.combined.vdj@meta.data[OTIItrbv,]$OTIIstatus <- "OTII-TCRA incomplete"
+bc.combined.vdj@meta.data[OTIIbiclonal,]$OTIIstatus <- "OTII-biclonal"
+bc.combined.vdj@meta.data[nonOTII,]$OTIIstatus <- "non OTII"
+bc.combined.vdj@meta.data[unknown,]$OTIIstatus <- "unknown"
+
+OTIIpalette <- c( "#A6D96AFF","#66BD63FF","#1A9850FF","#FDAE61FF","#D73027FF","#878787FF")
+names(OTIIpalette) <- c("OTII","OTII-TCRB incomplete", "OTII-TCRA incomplete","OTII-biclonal","non OTII","unknown")
+ggplotly(DimPlot(bc.combined.vdj, group.by = "OTIIstatus", reduction = "wnn.umap", cols = OTIIpalette, pt.size = 0.5))
+
+DimPlot(bc.combined.vdj, group.by = "OTIIstatus", reduction = "wnn.umap", cells.highlight = rownames(bc.combined.vdj@meta.data[with(bc.combined.vdj@meta.data, grepl('^TRAV14.*TRAJ31.*', CTgene)),]), cols = "#878787FF",cols.highlight = "#DD513AFF", pt.size = 0.5,sizes.highlight = 0.5)
+
+DimPlot(bc.combined.vdj, reduction = "wnn.umap", cells.highlight = rownames(bc.combined.vdj@meta.data[with(bc.combined.vdj@meta.data, grepl('.*TRBV12-1.*', CTgene)),]), cols = "#878787FF",cols.highlight = "#DD513AFF", pt.size = 0.5,sizes.highlight = 0.5)
+DimPlot(bc.combined.vdj, reduction = "wnn.umap", cells.highlight = OTIItrbv, cols = "#878787FF",cols.highlight = "#DD513AFF", pt.size = 0.5,sizes.highlight = 0.5)
+DimPlot(bc.combined.vdj, reduction = "wnn.umap", cells.highlight = rownames(bc.combined.vdj@meta.data[with(bc.combined.vdj@meta.data, grepl('.*TRBV12-2\\+TRBV13-2.*', CTgene)),]), cols = "#878787FF",cols.highlight = "#DD513AFF", pt.size = 0.5,sizes.highlight = 0.5)
+
+FeaturePlot(bc.combined.vdj, features = c("adt_TCR-VB5","adt_TCR-VA2","Trbv12-2","Trav14n-1"), reduction = "wnn.umap") & scale_colour_gradientn(colours = rev(viridis::magma(10)))
+FeaturePlot(bc.combined.vdj, features = c("Trbv12-1"), reduction = "wnn.umap") & scale_colour_gradientn(colours = rev(viridis::magma(10)))
+```
+
+```{r}
+bc.combined.vdj <- highlightClones(bc.combined.vdj, 
+                    cloneCall= "aa", 
+                    sequence = "CAARGNRIFF_CASSLGGESQNTLYF")
+DimPlot(bc.combined.vdj,reduction = "wnn.umap", cells.highlight = OTII)
+DimPlot(bc.combined.vdj,reduction = "wnn.umap", group.by = "highlight", cols.highlight = 'firebrick1', na.value = "beige" ) #+ 
+  ggplot2::theme(plot.title = element_blank())
+```
+
+```{r}
+vizGenes(combined[c(1,2,3)], 
+         x.axis = "TRBV",
+         y.axis = "TRAV",
+         plot = "heatmap", 
+         scale = FALSE)
+
+alluvialClones(bc.combined.vdj, 
+               cloneCall = "aa", 
+               y.axes = c("MULTI_ID", "annotation", "sig.annotation"), 
+               color = "CAARGNRIFF_NA" )+ 
+    scale_fill_manual(values = c("grey", colorblind_vector[3]))
+```
+

@@ -1,0 +1,143 @@
+---
+title: "radarcharts"
+author: "Chau"
+date: "2024-06-03"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r}
+
+Idents(b6.combined.cc) <- "OTIIstatus"
+OTIIb6 <- subset(b6.combined.cc, idents = c("OTII","OTII - multichains","non OTII"))# Remove 'unknown' and 'OTII- incomplete" because not informative
+Idents(OTIIb6) <- "stage"
+Thymusb6 <- subset(OTIIb6, idents = c("Thymus-WT","Thymus-PreTum","Thymus-Tum"))
+Idents(Thymusb6) <- "OTIIstatus"
+
+ThymusOTIIb6 <- subset(Thymusb6, idents = c("OTII"))
+table_df <- table(ThymusOTIIb6@meta.data$sig.annotation,ThymusOTIIb6@meta.data$stage)
+table_df[table_df < 10] <- 0
+df_radarchartOTII<-as.data.frame(prop.table(table_df,2)*100)
+df_radarchartOTII <- df_radarchartOTII[!(df_radarchartOTII$Freq=="NaN"), ]
+colnames(df_radarchartOTII) <- c( "Annotation","stage","Proportion")
+
+
+ThymusOTIImultib6 <- subset(Thymusb6, idents = c("OTII - multichains"))
+table_df <- table(ThymusOTIImultib6@meta.data$sig.annotation,ThymusOTIImultib6@meta.data$stage)
+table_df[table_df < 10] <- 0
+df_radarchartOTIImulti<-as.data.frame(prop.table(table_df,2)*100)
+df_radarchartOTIImulti <- df_radarchartOTIImulti[!(df_radarchartOTIImulti$Freq=="NaN"), ]
+colnames(df_radarchartOTIImulti) <- c( "Annotation","stage","Proportion")
+
+ThymusnonOTIIb6 <- subset(Thymusb6, idents = c("non OTII"))
+table_df <- table(ThymusnonOTIIb6@meta.data$sig.annotation,ThymusnonOTIIb6@meta.data$stage)
+table_df[table_df < 10] <- 0
+df_radarchartnonOTII<-as.data.frame(prop.table(table_df,2)*100)
+df_radarchartnonOTII <- df_radarchartnonOTII[!(df_radarchartnonOTII$Freq=="NaN"), ]
+colnames(df_radarchartnonOTII) <- c( "Annotation","stage","Proportion")
+```
+
+```{r}
+
+Idents(b6.combined.cc) <- "stage"
+Spleenb6 <- subset(b6.combined.cc, idents = c("Spleen-WT","Spleen-PreTum","Spleen-Tum"))
+Idents(Spleenb6) <- "sig.annotation"
+SB6.bar <- subset(Spleenb6,  idents = c("SP4 mature","DPblast-Myc+","DPsm-Myc+", "SP4-Myc+","Undefined Myc+","Tgd/NK/NKT","NK"))
+Idents(SB6.bar) <- "OTIIstatus"
+
+
+SpleenOTIIb6 <- subset(SB6.bar, idents = c("OTII"))
+table_df <- table(SpleenOTIIb6@meta.data$sig.annotation,SpleenOTIIb6@meta.data$stage)
+table_df[table_df < 10] <- 0
+df_radarchartOTII<-as.data.frame(prop.table(table_df,2)*100)
+ df_radarchartOTII<-df_radarchartOTII[!(df_radarchartOTII$Freq=="NaN"), ]
+colnames(df_radarchartOTII) <- c( "Annotation","stage","Proportion")
+df_radarchartOTII <- subset(df_radarchartOTII, df_radarchartOTII$Annotation %in% c("SP4 mature","DPblast-Myc+","DPsm-Myc+", "SP4-Myc+","Undefined Myc+","Tgd/NK/NKT","NK"))
+
+SpleenOTIImultib6 <- subset(SB6.bar, idents = c("OTII - multichains"))
+table_df <- table(SpleenOTIImultib6@meta.data$sig.annotation,SpleenOTIImultib6@meta.data$stage)
+table_df[table_df < 10] <- 0
+df_radarchartOTIImulti<-as.data.frame(prop.table(table_df,2)*100)
+ df_radarchartOTIImulti<-df_radarchartOTIImulti[!(df_radarchartOTIImulti$Freq=="NaN"), ]
+colnames(df_radarchartOTIImulti) <- c( "Annotation","stage","Proportion")
+df_radarchartOTIImulti <- subset(df_radarchartOTIImulti, df_radarchartOTIImulti$Annotation %in% c("SP4 mature","DPblast-Myc+","DPsm-Myc+", "SP4-Myc+","Undefined Myc+","Tgd/NK/NKT","NK"))
+
+SpleennonOTIIb6 <- subset(SB6.bar, idents = c("non OTII"))
+table_df <- table(SpleennonOTIIb6@meta.data$sig.annotation,SpleennonOTIIb6@meta.data$stage)
+table_df[table_df < 10] <- 0
+df_radarchartnonOTII<-as.data.frame(prop.table(table_df,2)*100)
+ df_radarchartnonOTII<-df_radarchartnonOTII[!(df_radarchartnonOTII$Freq=="NaN"), ]
+colnames(df_radarchartnonOTII) <- c( "Annotation","stage","Proportion")
+df_radarchartnonOTII <- subset(df_radarchartnonOTII, df_radarchartnonOTII$Annotation %in% c("SP4 mature","DPblast-Myc+","DPsm-Myc+", "SP4-Myc+","Undefined Myc+","Tgd/NK/NKT","NK"))
+```
+
+
+```{r}
+
+Idents(bc.combined.cc) <- "OTIIstatus"
+OTIIbc <- subset(bc.combined.cc, idents = c("OTII","OTII - multichains","non OTII"))# Remove 'unknown' and 'OTII- incomplete" because not informative
+Idents(OTIIbc) <- "annotation"
+Thymusbc <- subset(OTIIbc, idents = c("Thymus-WT","Thymus-PreTum late","Thymus-Tum"))
+Idents(Thymusbc) <- "OTIIstatus"
+
+ThymusOTIIbc <- subset(Thymusbc, idents = c("OTII"))
+table_df <- table(ThymusOTIIbc@meta.data$sig.annotation,ThymusOTIIbc@meta.data$annotation)
+table_df[table_df < 40] <- 0
+df_radarchartOTII<-as.data.frame(prop.table(table_df,2)*100)
+df_radarchartOTII <- df_radarchartOTII[!(df_radarchartOTII$Freq=="NaN"), ]
+colnames(df_radarchartOTII) <- c( "Annotation","stage","Proportion")
+
+
+ThymusOTIImultibc <- subset(Thymusbc, idents = c("OTII - multichains"))
+table_df <- table(ThymusOTIImultibc@meta.data$sig.annotation,ThymusOTIImultibc@meta.data$annotation)
+table_df[table_df < 40] <- 0
+df_radarchartOTIImulti<-as.data.frame(prop.table(table_df,2)*100)
+df_radarchartOTIImulti <- df_radarchartOTIImulti[!(df_radarchartOTIImulti$Freq=="NaN"), ]
+colnames(df_radarchartOTIImulti) <- c( "Annotation","stage","Proportion")
+
+ThymusnonOTIIbc <- subset(Thymusbc, idents = c("non OTII"))
+table_df <- table(ThymusnonOTIIbc@meta.data$sig.annotation,ThymusnonOTIIbc@meta.data$annotation)
+table_df[table_df < 30] <- 0
+df_radarchartnonOTII<-as.data.frame(prop.table(table_df,2)*100)
+df_radarchartnonOTII <- df_radarchartnonOTII[!(df_radarchartnonOTII$Freq=="NaN"), ]
+colnames(df_radarchartnonOTII) <- c( "Annotation","stage","Proportion")
+```
+
+```{r}
+# Charger les données
+df_list <- list(df_radarchartOTII, df_radarchartOTIImulti, df_radarchartnonOTII)
+df_combined <- NULL
+  for (i in seq_along(df_list)) {
+    df_i <- subset(df_list[[i]], stage == "Thymus-WT")
+      df_ti <- data.frame(t(df_i[,"Proportion"]))
+      colnames(df_ti) <- df_i$Annotation
+      # Ajouter chaque data frame transformé au data frame combiné
+      df_combined <- rbind(df_combined, setNames(df_ti, colnames(df_ti)))
+      col_names <- c(col_names, paste(colnames(df_ti), labels[i], sep=" - "))
+  }
+df_combined <- rbind(rep(100, 21), rep(0, 21),df_combined)[, 1:21]
+rownames(df_combined) <- c("Max","Min","OTII","OTII - multichains","non OTII")
+op <- par(mar = c(1, 1, 1, 1))  # Ajuster les marges
+radarchart(df_combined, cglcol="black", cglty=2, cglwd=1, vlcex=1,
+               pcol=c("#7AD151FF","#FDE725FF","#DE4968FF"),pty = 20, plty=1, 
+               caxislabels=paste(seq(from=0, to=100, by=25), "%"),
+               axislabcol="black", axistype=4,
+               title=paste("Thymus-WT"),
+               plwd=4)
+
+# Ajouter une légende
+#legend("topright", legend=rownames(df_combined)[3:5], lty=linetypes, lwd=2, cex=0.8)
+node_labels <- colnames(df_combined)
+node_positions <- seq(0, 2 * pi, length.out = length(node_labels) + 1)[-1]
+node_r <- rep(60, length(node_labels))  # Distance pour chaque nœud
+text_pos_x <- cos(node_positions) * (node_r + 5)  # Ajuster la position x
+text_pos_y <- sin(node_positions) * (node_r + 5)  # Ajuster la position y
+text_labels <- colnames(df_combined)
+
+# Tracer les étiquettes
+text(text_pos_x, text_pos_y, labels = text_labels, cex = 0.8)
+
+par(op)
+```

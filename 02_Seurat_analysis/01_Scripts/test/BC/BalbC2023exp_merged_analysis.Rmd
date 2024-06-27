@@ -1,0 +1,285 @@
+---
+title: "BalbC_2023_merged_analysis"
+output: html_document
+date: "2024-01-25"
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(plotly)
+library(dplyr)
+library(DT)
+library(viridisLite)
+library(viridis)
+library(RColorBrewer)
+library(clusterProfiler)
+library(enrichplot)
+#BiocManager::install("org.Mm.eg.db")
+# Set the random number seed
+set.seed(1234)
+```
+
+
+#Clustering on WT mice
+```{r}
+load(file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/miceWT_2023_merged.Robj")
+gene_annotation <- read.csv("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/CHAU/annotation.csv", head = T, sep = '\t')
+```
+
+```{r}
+miceWT<-JoinLayers(miceWT)
+miceWT <- FindClusters(miceWT, graph.name = "wsnn", algorithm = 1, resolution = c(0.4 ,0.5 ,0.6, 0.8, 1.0, 1.4), verbose = FALSE, random.seed = 1234)
+DimPlot(miceWT, reduction = "wnn.umap", group.by = "wsnn_res.0.6", label = T,pt.size = 1, label.size = 6)
+DimPlot(miceWT,reduction = "wnn.umap", group.by = "annotation",cols = c("#BB0A21","#7EB488"), pt.size = 1)
+Idents(miceWT)<-"annotation"
+FeaturePlot(miceWT, reduction = "wnn.umap", features = c("adt_CD25","Il2ra","Mki67","adt_CD8","adt_CD4","adt_CD3","adt_CD62L","adt_CD69","Myc","adt_TCRgd","Rag1","percent.mt")) & scale_colour_gradientn(colours = viridis(10))
+```
+
+#Cell cycle scoring 
+```{r}
+cc.genes.updated.2019.mouse <- readRDS(file ="/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/cc_genes_updated_2019_mouse.rds")
+# Assign Cell-Cycle Scores
+miceWT<- CellCycleScoring(object = miceWT, s.features = cc.genes.updated.2019.mouse$s.genes, g2m.features = cc.genes.updated.2019.mouse$g2m.genes, set.ident = TRUE, verbose = FALSE)
+DimPlot(miceWT, reduction = "wnn.umap", group.by = "Phase", label = F, pt.size = 1)
+
+```
+
+
+#Dotplot
+```{r}
+Idents(miceWT)<-"wsnn_res.0.6"
+miceWT@active.ident <- factor(miceWT@active.ident,levels=c("6","11","14","5","0","7","2","1","15","10","4","9","3","8","12","13"))
+
+
+genes <- c("Ptcra","Il2ra","adt_CD25","Top2a","Mki67","Cdk1","Rag1","Cd3d","adt_CD3","Cd4","adt_CD4","Cd8a","adt_CD8","Ccr9","Cd69","adt_CD69","Ccr7","adt_CCR7","Sell","Nkg7","Gzma","Ccl5","Klrc1","Trdc","adt_TCRgd","Trbv12-2","adt_TCR-VB5","adt_TCR-VA2","percent.mt")
+dp <- DotPlot(miceWT, features = genes) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) + scale_colour_gradient2(low = "steelblue", mid = "ivory1", high = "red") + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis() + coord_flip()
+dp + labs(title = "Expression of marker genes and surface proteins by clusters")
+
+adts <- c("adt_CD44","adt_CD25","adt_CD24","adt_CD3","adt_TCRgd","adt_TCR-B","adt_CD4","adt_CD8","adt_CD69","adt_CD62L","adt_TCR-VB5","adt_TCR-VA2","adt_CD5", "adt_CCR7" )
+dp <- DotPlot(miceWT, features = adts) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) + scale_colour_gradient2(low = "steelblue", mid = "ivory1", high = "red") + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis()#+ coord_flip()
+dp + labs(title = "Expression of surface protein by clusters")
+```
+
+
+#Different markers
+```{r}
+FeaturePlot(miceWT,
+            reduction = "wnn.umap",
+            features = c("Cd4","Cd8a","adt_CD4","adt_CD8","Il2ra","Cd3d","Cd19","Ptcra","Cd27","Cd69","Rag1","Cd5","Bmf","Sell","Ccr7","Cxcr3","Ccl5","Foxp3","Gzma","Nkg7","Klrc1","Mki67")) & scale_colour_gradientn(colours = viridis(10))
+
+FeaturePlot(miceWT,
+            reduction = "wnn.umap",
+            features = c("Myc","adt_TCR-VB5","adt_TCR-VA2")) & scale_colour_gradientn(colours = viridis(10))
+
+```
+
+
+
+#Cluster Identification
+```{r}
+ggplotly(DimPlot(miceWT, reduction = "wnn.umap", group.by = "wsnn_res.0.6", label = T))
+#Cluster 6 - DN
+FeaturePlot(miceWT, reduction = "wnn.umap", features = c("Cd3d","Cd4","Cd8b1","Ptcra", "Il2ra"))& scale_colour_gradientn(colours = viridis(10))
+
+#Cluster 14 - DP-CD25+ : This cluster is specific for BalBC/OTII
+FeaturePlot(miceWT,reduction = "wnn.umap", features = c("adt_CD4","Cd4", "adt_CD8", "Cd8a1", "adt_CD25", "Il2ra", "Ptcra"))& scale_colour_gradientn(colours = viridis(10))
+
+#Cluster 11 - DP blast
+FeaturePlot(miceWT,reduction = "wnn.umap", features = c("Top2a","Mki67"))& scale_colour_gradientn(colours = viridis(10)) # cycling 
+
+#Cluster 5 : DPsm-CCR7+
+Idents(miceWT)<-"wsnn_res.0.6"
+FindMarkers(miceWT, ident.1 = "5", ident.2 = "0", assay = 'ADT')
+FindMarkers(miceWT, ident.1 = "5", ident.2 = "0", assay = 'RNA')
+Idents(miceWT)<-"manual.annotation"
+miceWT@active.ident <- factor(miceWT@active.ident,levels=c("DN","DPblast","DPsm-CD25+","DPsm-CCR7+","DPsm","DP69int","DP69+","SP4","SP8","Tgd","NK"))
+VlnPlot(miceWT, features = "adt_CCR7")
+FeaturePlot(miceWT, reduction = "wnn.umap", features = c("adt_CCR7","adt_CD69","adt_VA2","adt_VB5"))& scale_colour_gradientn(colours = viridis(10))
+VlnPlot(miceWT, features = c("adt_CCR7","adt_TCR-VB5","TCR-VA2","adt_CD69"))
+
+#Cluster 0,7,2 - DP small
+VlnPlot(miceWT,features = c("Ccr9"))
+FeaturePlot(miceWT, reduction = "wnn.umap", features = c("Rag1","Cd3d","Cd4","Cd8b1","Ccr9")) & scale_colour_gradientn(colours = viridis(10))# ccr9 in DP mostly
+
+#Cluster1 : transition between DPsm and DP69+ (DP69+int)
+FeaturePlot(miceWT, reduction = "wnn.umap", features = c("Rag1","Cd3d","Cd4","Cd8b1","Ccr9", "adt_CD69")) & scale_colour_gradientn(colours = viridis(10))
+
+#Cluster 15 : Fin DP - DP69+ 
+FeaturePlot(miceWT,reduction = "wnn.umap", features = c("adt_CD5","adt_CD69","Cd69","Cd5"))& scale_colour_gradientn(colours = viridis(10))
+VlnPlot(miceWT,features = c("adt_CD69"))
+
+#Cluster 10,4 - SP4
+FeaturePlot(miceWT,reduction = "wnn.umap", features = c("Cd3d","adt_CD3","Cd4","adt_CD4","Cd8b1","adt_CD8","adt_CD4", "Ccr7","Sell","Il7r")) # SP 4 , ccr7 naive t cell, Sell naive and memory
+
+#Cluster 9,3 - SP8
+FeaturePlot(miceWT,reduction = "wnn.umap", features = c("Cd3d","adt_CD3","Cd4","adt_CD4","Cd8b1","adt_CD8","adt_CD4", "Ccr7","Sell","Il7r"))
+
+#Cluster 13 - NK 
+
+FeaturePlot(miceWT,reduction = "wnn.umap", features = c("Gzma","Nkg7","Ccl5", "Klrc1")) #Nkg7 T cytotoxique or NK
+
+#Cluster 8, 12 : T cells gamma delta
+
+FeaturePlot(miceWT,reduction = "wnn.umap", features = c("Trdc","adt_TCRgd","Sell", "Ccr7")) # Cluster 8 immature Tgd
+```
+
+
+# Manual Annotation
+```{r}
+Idents(miceWT) <- "wsnn_res.0.6"
+miceWT@meta.data$manual.annotation = "nothing"
+miceWT@meta.data[WhichCells(miceWT, slot = "wsnn_res.0.6", idents = "6"),]$manual.annotation = "DN"
+miceWT@meta.data[WhichCells(miceWT, slot = "wsnn_res.0.6", idents = "14"),]$manual.annotation = "DPsm-CD25+"
+miceWT@meta.data[WhichCells(miceWT, slot = "wsnn_res.0.6", idents = "5"),]$manual.annotation = "DPsm-CCR7+"
+miceWT@meta.data[WhichCells(miceWT, slot = "wsnn_res.0.6", idents = c("0","7","2")),]$manual.annotation = "DPsm"
+miceWT@meta.data[WhichCells(miceWT, slot = "wsnn_res.0.6", idents = "11"),]$manual.annotation = "DPblast"
+miceWT@meta.data[WhichCells(miceWT, slot = "wsnn_res.0.6", idents = c("8","12")),]$manual.annotation = "Tgd"
+miceWT@meta.data[WhichCells(miceWT, slot = "wsnn_res.0.6", idents = "1"),]$manual.annotation = "DP69int"
+miceWT@meta.data[WhichCells(miceWT, slot = "wsnn_res.0.6", idents = "15"),]$manual.annotation = "DP69+"
+miceWT@meta.data[WhichCells(miceWT, slot = "wsnn_res.0.6", idents = c("4","10")),]$manual.annotation = "SP4"
+miceWT@meta.data[WhichCells(miceWT, slot = "wsnn_res.0.6", idents = c("9","3")),]$manual.annotation = "SP8"
+miceWT@meta.data[WhichCells(miceWT, slot = "wsnn_res.0.6", idents = "13"),]$manual.annotation = "NK"
+ggplotly(DimPlot(miceWT,reduction = "wnn.umap", group.by = "manual.annotation", label = T,pt.size = 1,label.size = 6))
+```
+
+```{r}
+Idents(miceWT)<-"manual.annotation"
+miceWT@active.ident <- factor(miceWT@active.ident,levels=c("DN","DPblast","DPsm-CD25+","DPsm-CCR7+","DPsm","DP69int","DP69+","SP4","SP8","Tgd","NK"))
+#Visualize the modality weights that were learned for each cell. 
+VlnPlot(miceWT, features = "RNA.weight", group.by = 'manual.annotation', sort = TRUE, pt.size = 0.1) +
+  NoLegend()
+VlnPlot(miceWT, features = "ADT.weight", group.by = 'manual.annotation', sort = TRUE, pt.size = 0.1) +
+  NoLegend()
+
+#To compare 
+p1 <- DimPlot(miceWT, reduction = "rna.umap", group.by = "manual.annotation", label = T, label.size = 6, repel =T) + ggtitle("RNA")
+p2 <- DimPlot(miceWT, reduction = "adt.umap", group.by = "manual.annotation", label = T, label.size = 6, repel =T) + ggtitle("ADT")
+p3 <- DimPlot(miceWT, reduction = "wnn.umap", group.by = "manual.annotation", label = T, label.size = 6, repel =T) + ggtitle("WNN")
+p1 + p2 + p3 & NoLegend() & theme(plot.title = element_text(hjust = 0.5))
+```
+
+###DEGs analysis 
+
+Differential gene expression analysis:
+
+We search for markers specific to each clusters
+```{r}
+#DO NOT RUN, file available
+ggplotly(DimPlot(miceWT,reduction = "wnn.umap", group.by = "manual.annotation", label = T, pt.size = 1,label.size = 6 ))
+Idents(miceWT) <- "wsnn_res.0.6"
+allmark<- FindAllMarkers(miceWT)#,min.diff.pct = 0.3)
+write.csv(allmark, file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/markWT_mananno.csv")
+allmark.cluster <- read.csv(file =  "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/markWT.csv",sep = ",")
+
+
+Idents(miceWT)<-"manual.annotation"
+allmark<- FindAllMarkers(miceWT)#min.diff.pct = 0.3)
+write.csv(allmark, file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/markWT_mananno.csv")
+allmark.mananno <- read.csv(file =  "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/markWT_mananno.csv",sep = ",")
+
+#Adding annotation to DE genes
+unique_gene_annotation <- unique(gene_annotation[, c("Symbol", "Name")])
+#By clusters 
+allmark.cluster <- allmark.cluster %>%
+  left_join(y = unique_gene_annotation, by = c("gene" = "Symbol"))
+datatable(allmark.cluster,filter = 'top',options = list(pageLength = 15))
+#By annotation
+allmark.mananno <- allmark.mananno %>%
+  left_join(y = unique_gene_annotation, by = c("gene" = "Symbol"))
+datatable(allmark.mananno,filter = 'top',options = list(pageLength = 15))
+```
+
+
+
+```{r}
+# Top genes in each cluster
+top_genes_per_cluster <- 
+  allmark %>%
+  group_by(cluster) %>%
+  top_n(n = 5, wt = p_val_adj)
+
+Idents(miceWT)<-"manual.annotation"
+miceWT@active.ident <- factor(miceWT@active.ident,levels=c("DN","DPblast","DPsm-CD25+","DPsm-CCR7+","DPsm","DP69int","DP69+","SP4","SP8","Tgd","NK"))
+dptop <- DotPlot(miceWT, features = unique(top_genes_per_cluster$gene)) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) + scale_colour_gradient2(low = "steelblue", mid = "ivory1", high = "red") + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis()#+ coord_flip()
+dptop + labs(title = "Expression of marker genes by clusters")
+```
+
+We use the genes found with the previous DGE to found enriched GO terms.
+
+```{r}
+# get all gene name express in our cells as background
+background <- miceWT@assays$RNA@features
+backgroundrow <- rownames(background)
+
+#DGE between 
+
+upreg_wt <- subset(allmark, avg_log2FC>0.2& p_val_adj<1e-10) #upregulated genes
+genecomprow <- upreg_wt$gene
+CPenrich <- enrichGO(gene= genecomprow, OrgDb = 'org.Mm.eg.db', ont="BP",keyType = "SYMBOL",universe = backgroundrow) # org.Mm.eg.db genome mouse
+datatable(upreg_wt,filter = 'top',options = list(pageLength = 15))
+
+downreg_wt <- subset(allmark, avg_log2FC<0.2 & p_val_adj<1e-5) #downregulated genes
+genecomprow2 <- downreg_wt$gene
+CPenrich2 <- enrichGO(gene= genecomprow2, OrgDb = 'org.Mm.eg.db', ont="BP",keyType = "SYMBOL",universe = backgroundrow) # org.Mm.eg.db genome mouse
+```
+
+#DP Cells subset analysis
+```{r}
+#select genes DE from DP populations
+genes_DP <- allmark.mananno %>% 
+  filter(cluster %in% c("DPblast","DPsm-CD25+","DPsm-CCR7+","DPsm","DP69int","DP69+")) %>%
+  filter((avg_log2FC > 5 | avg_log2FC < -5) & p_val_adj < 1e-10) %>%
+  arrange(desc(avg_log2FC)) %>%
+
+genes_DP <- allmark.mananno %>%
+  group_by(cluster) %>% # Grouper par cluster
+  filter(cluster %in% c("DPblast","DPsm-CD25+","DPsm-CCR7+","DPsm","DP69int","DP69+")) %>% # Filtrer les clusters spécifiques
+  slice_max(order_by = abs(avg_log2FC), n = 20) %>% # Sélectionner les gènes les plus variables (par exemple, les 20 meilleurs)
+  ungroup() %>% # Enlever le groupement
+  arrange(cluster, desc(avg_log2FC)) %>%
+  dplyr::pull(gene)
+
+# DP populations subset : 
+Idents(miceWT)  <- "manual.annotation" 
+DP_Cells <- subset(miceWT, idents = c("DPblast","DPsm-CD25+","DPsm-CCR7+","DPsm","DP69int","DP69+"))
+
+#Verify the existence of gene list in data layer:
+#all(genes_DP %in% rownames(DP_Cells[["RNA"]]$data))
+#DoHeatmap(DP_Cells, features = genes_DP, slot = "data")
+
+
+dptop <- DotPlot(DP_Cells, features = unique(genes_DP)) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) + scale_colour_gradient2(low = "steelblue", mid = "ivory1", high = "red") + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis() + coord_flip()
+dptop + labs(title = "Expression of genes in DP Cells")
+
+#Dotplot of genes DE in each population
+# DPblast : 
+DPblast_gene <- head(allmark.mananno[allmark.mananno$cluster == "DPblast" & allmark.mananno$avg_log2FC > 0,]$gene,n =20)
+dptop <- DotPlot(DP_Cells, features = DPblast_gene) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) + scale_colour_gradient2(low = "steelblue", mid = "ivory1", high = "red") + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis() + coord_flip()
+dptop + labs(title = "Expression of genes in DP Cells")
+
+
+# Functional enrichment analysis
+background <- DP_Cells@assays$RNA@features
+backgroundrow <- rownames(background)
+DPblast_gene <- allmark.mananno[allmark.mananno$cluster == "DPblast" & allmark.mananno$avg_log2FC > 0 ,]
+genecomprow <- DPblast_gene$gene
+CPenrich <- enrichGO(gene= genecomprow, OrgDb = 'org.Mm.eg.db', ont="BP",keyType = "SYMBOL",universe = backgroundrow) # org.Mm.eg.db genome mouse
+
+#Visualization of enrich terms
+
+dotplot(CPenrich, showCategory=20,color = "p.adjust",x="Count") #+ coord_flip()+theme(axis.text.x = element_text(angle = 90, hjust = 1))
+cnetplot(CPenrich, node_label="all") 
+CPenrich_ema <- pairwise_termsim(CPenrich)
+emapplot(CPenrich_ema)
+treeplot(CPenrich_ema, hclust_method = "average")
+
+```
+
+```{r}
+#save(miceWT, file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/miceWT_2023_merged.Robj")
+```
+

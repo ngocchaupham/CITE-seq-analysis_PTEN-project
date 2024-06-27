@@ -1,0 +1,1012 @@
+---
+title: "B6_merge_analysis_2024"
+author: "Chau"
+date: "2024-04-17"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+#Loading libraries
+
+```{r, include= FALSE, message=FALSE, error=FALSE, warning=FALSE}
+library(Seurat)
+library(ggplot2)
+library(plotly)
+library(cowplot)
+library(dplyr)
+library(tidyr)
+library(ggrepel)
+library(stringr)
+library(DT)
+library(paletteer)
+library(viridisLite)
+library(viridis)
+library(scigenex)
+scigenex::set_verbosity(0)
+library(tibble)
+library(circlize)
+library(tidyverse)
+library(AUCell)
+library(clusterProfiler)
+install.packages("msigdbr")
+library(msigdbr)
+library(fgsea)
+library(enrichplot)
+library(gridExtra)
+library(patchwork)
+library(data.table)
+library(ggthemes)
+library(ggalluvial)
+source("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/fonctions_R/DEG_functions.R")
+```
+
+# Loading merged seurat object and WT subset
+```{r, include= FALSE, message=FALSE, error=FALSE, warning=FALSE}
+load(file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/B6/merge_B6ccregress_2024.Robj")
+load(file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/B6/miceWT_B6_merged.Robj")
+```
+
+# Set up
+```{r, include=FALSE}
+#Set background for clusterProfiler
+background <- b6.combined.cc@assays$RNA@features
+backgroundrow <- rownames(background)
+# Set the random number seed
+set.seed(1234)
+source("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/fonctions_R/DEG_Visualization.R")
+# Gene's annotation file 
+gene_annotation <- read.csv("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/CHAU/annotation.csv", head = T, sep = '\t')
+unique_gene_annotation <- unique(gene_annotation[, c("Symbol", "Name")])
+
+#Palettes for "stage"
+stage.palette <- rev(paletteer::paletteer_d("ggprism::viridis"))
+names(stage.palette) <- c("Thymus-WT","Spleen-WT","Thymus-PreTum","Spleen-PreTum","Thymus-Tum","Spleen-Tum")
+b6.combined.cc$stage <- factor(b6.combined.cc$stage, levels=c("Thymus-WT","Thymus-PreTum","Thymus-Tum","Spleen-WT","Spleen-PreTum","Spleen-Tum"))
+```
+
+```{r}
+ggplotly(DimPlot(b6.combined.cc, reduction = "umap", group.by = "orig.ident"))
+```
+
+```{r}
+DimPlot(b6.combined.cc, reduction = "umap", group.by = "stage", cols = stage.palette, label =T, repel = TRUE)
+DimPlot(b6.combined.cc, reduction = "umap", group.by = "RNA_snn_res.1", label =T, repel = TRUE)
+```
+
+```{r}
+VlnPlot(b6.combined.cc, features = c("Myc"), pt.size = 0.2, group.by = "stage", ncol = 3)
+```
+
+
+```{r, fig.width=15, fig.height=5}
+DimPlot(miceWT, reduction = "umap", group.by = "orig.ident")+
+DimPlot(miceWT, reduction = "umap", group.by = "stage")+
+DimPlot(miceWT, reduction = "umap", group.by = "RNA_snn_res.1", label =T)  
+  
+```
+
+```{r}
+miceWT <- FindNeighbors(object = miceWT, 
+                           dims = 1:26, 
+                           verbose = FALSE, 
+                           reduction = "pca")
+
+miceWT <- FindClusters(object = miceWT, 
+                          resolution = 1.5 ,
+                          verbose = FALSE,
+                          random.seed = 1234)
+miceWT <- RunUMAP(object = miceWT, reduction = "pca", seed.use = 1234, dims = 1:26, n.neighbors =60, min.dist = 0.2)
+```
+
+```{r, fig.width=15, fig.height=5}
+ggplotly(DimPlot(miceWT, reduction = "umap", group.by = "RNA_snn_res.1.5", label =T))  
+```
+
+```{r, message = FALSE,warning =FALSE, fig.width=10, fig.height=15 }
+Idents(miceWT) <- "RNA_snn_res.1"
+# Thymus.markers <-  c('Tcrg-C2', 'Tcrg-C4', '5830411N06Rik','Hes1', 'Mpzl2', '1500009L16Rik','Hist1h2af', 'Hist1h3b', 'Esco2', 'Mki67', 'BC030867', 'Rag1', 'BB031773', 'Tctex1d1', 'Rapsn', 'Ccr4', 'Ifit1', 'Iigp1', 'Itm2a', 'Cd40lg', 'Zbtb7b', 'Chl1', 'Acvrl1','Tesc', 'Gm26771', 'S1pr1', 'Slfn1', 'Nkg7', 'Nr4a3', 'Pdcd1lg2', 'Tnfrsf4', 'Tnfrsf9', 'Arhgap20', 'Foxp3', 'Zbtb16')
+# T.markers1 <- unique(c("Trdc","Tcrg-C1","Il2ra","Ptcra","Sell","Cd8a","Cd4","Cdk1","Pcna","Mki67","BC030867","Ccr9","Rag1","Cd69","Tox2","Cd5","Ccr7","Ccnd2","Nkg7","Gzma","Ccl5","Cxcr3"))
+T.markers <- c("Ptcra","Il2ra","Top2a","Mki67","Cd4","Cd8a","Rag1","Ccr4","Itm2a",'Chl1','Cd40lg', "Ccnd2","Ccr7","S1pr1","Gzma","Nkg7",'S100a4', 'Zbtb16','Klrd1','Ccl5','Tcrg-C4',"Trdc","Tcrg-C1","Tox2")
+
+miceWT$RNA_snn_res.1.5 <- factor(miceWT$RNA_snn_res.1.5, levels =c("14","7","4","2","6","1","10","3","5","11","0","8","13","9","12"))
+
+DotPlot(miceWT, features = T.markers, group.by = "RNA_snn_res.1.5") + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) + scale_colour_gradientn(colours = (viridis(4))) + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis() + labs(title = "Expression of marker genes by clusters") + coord_flip()
+
+```
+
+#Cluster Identification
+```{r}
+ggplotly(DimPlot(miceWT, reduction = "umap", group.by = "RNA_snn_res.2", label = T))
+# T cells gamma delta (Tcrg-C1+, Tcrd+, Aes+, Anxa1+) : 12
+FeaturePlot(miceWT, features = c('Tcrg-C4',"Trdc","Tcrg-C1", "Tle5","Anxa1"),order = T, pt.size = 0.2, ncol = 4 ) & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+# NKT (Klrd1) : Cluster 9
+
+# D3a (Cd4- and CDd8-, Il2ra+, Ptcra+, Tcrb+, Tcf7+, Tcrg-C1+, Dntt+, Sell+) Cluster 14
+
+FeaturePlot(miceWT, features = c('Mpzl2', '1500009L16Rik', "Ptcra", "Il2ra"),order = T, pt.size = 0.2, ncol = 4 ) & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+
+# DP blast (Cd4+ and Cd8+, Cdk1+, Pcna+, Mki67+, Tcf7+, Ccnd3+, Dntt+,Trac+, Satb1+) Cluster 7
+
+FeaturePlot(miceWT, features = c('Cd4','Cd8a','Top2a',"Mki67"),order = T, pt.size = 0.2, ncol = 4 ) & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+
+# DP small (Cd4+ and Cd8+,Ccnd3+, Cdk1-, Trac+, Tcf7+, Ccr9+, Dntt+, Rag1+, Satb1+) : 4,2
+FeaturePlot(miceWT, features = c('Cd4','Cd8a',"Ccnd3", "Trac","Tcf7","Ccr9","Dntt","Rag1","Satb1"),order = T, pt.size = 0.2, ncol = 4 ) & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+
+# DP 69+  : 6,1 
+FeaturePlot(miceWT, features = c('Cd69',"adt_CD69"),order = T, pt.size = 0.2, ncol = 2 ) & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+
+# SP4 immature (Cd4+, Ccnd2+,Itm2a) : 3,10,5 (3 express high expression of Itm2a) - Itm2a induced PD-L1 expression, Overexpression of an ITM2A transgene in murine thymocytes resulted in a partial downregulation of CD8 in the DP population of thymocytes,
+FeaturePlot(miceWT, features = c('Cd4','Cd8a','Ccr7',"Cd69", "Tox2" , "Sell", "Ccnd2", "Cd5"),order = T, pt.size = 0.2, ncol = 4 ) & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+## Cluster 5 : Naive CD4+ T cell, expressing IFN response genes 
+## Cluster 10 express Lymphocyte antigenes
+
+# SP4 mature : (S1pr1+) :11,0,8,13
+FeaturePlot(miceWT, features = c('Cd4',"S1pr1"),order = T, pt.size = 0.2, ncol = 4 ) & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+
+```
+
+# Manual Annotation
+```{r}
+Idents(miceWT) <- "RNA_snn_res.1.5"
+miceWT@meta.data$manual.annotation = "nothing"
+miceWT@meta.data[WhichCells(miceWT, slot = "RNA_snn_res.1.5", idents = "14"),]$manual.annotation = "DN3a"
+miceWT@meta.data[WhichCells(miceWT, slot = "RNA_snn_res.1.5", idents = c("4","2")),]$manual.annotation = "DPsm"
+miceWT@meta.data[WhichCells(miceWT, slot = "RNA_snn_res.1.5", idents = "7"),]$manual.annotation = "DN3b/ISP/DP blast"
+miceWT@meta.data[WhichCells(miceWT, slot = "RNA_snn_res.1.5", idents = "12"),]$manual.annotation = "Tgd"
+miceWT@meta.data[WhichCells(miceWT, slot = "RNA_snn_res.1.5", idents = c("1","6")),]$manual.annotation = "DP69+"
+miceWT@meta.data[WhichCells(miceWT, slot = "RNA_snn_res.1.5", idents = c("3","10","5")),]$manual.annotation = "SP4 immature"
+miceWT@meta.data[WhichCells(miceWT, slot = "RNA_snn_res.1.5", idents = c("11","0","8","13")),]$manual.annotation = "SP4 mature"
+miceWT@meta.data[WhichCells(miceWT, slot = "RNA_snn_res.1.5", idents = "9"),]$manual.annotation = "NKT"
+
+mananno.palette <- rev(c("#9E0142FF","#D53E4FFF","#F46D43FF","#FDAE61FF","#FEE08BFF","#ABDDA4FF","#66C2A5FF","#3288BDFF")) 
+names(mananno.palette) <- c("DN3a","DN3b/ISP/DP blast","DPsm","DP69+","SP4 immature", "SP4 mature", "NKT", "Tgd")
+miceWT$manual.annotation <- factor(miceWT$manual.annotation, levels = c("DN3a","DN3b/ISP/DP blast","DPsm","DP69+","SP4 immature", "SP4 mature", "NKT", "Tgd"))
+ggplotly(DimPlot(miceWT,reduction = "umap", group.by = "manual.annotation", label = T,pt.size = 0.2,label.size = 4, cols = mananno.palette))
+```
+
+```{r}
+FeaturePlot(miceWT, features = c("Il2ra", "Ptcra","Mki67","Rag1","Cd4","Cd8a", "Itm2a","Cd69","Ccr7","Gzma","Trbv12-2","Trav14-1"),order = T, pt.size = 0.2) & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+```
+
+
+
+# ScigeneX (k=20 ,inflation=3)
+```{r}
+# Select informative genes
+B6WT_scigenex20 <- select_genes(miceWT,
+                              k = 20,
+                              distance_method = "pearson",
+                              which_slot = "data",
+                              row_sum=2,
+                              seed = 1234)
+
+# Run MCL
+B6WT_scigenex20.3 <- gene_clustering(B6WT_scigenex20,
+                                 s = 5,
+                                 threads = 2,
+                                 inflation = 3)
+
+```
+
+
+```{r}
+#Singletons filtered
+B6WT_scigenex20.3 <- B6WT_scigenex20.3[clust_size(B6WT_scigenex20.3)>6,]
+nclust(B6WT_scigenex20.3)
+```
+
+```{r}
+#Check statistics
+plot_cluster_stats(cluster_stats(B6WT_scigenex20.3)) + 
+ ggplot2::theme(axis.text.y = ggplot2::element_blank(),
+                axis.text.x = element_text(angle=45, vjust = 0.5),
+                panel.grid = element_blank())
+
+```
+
+```{r}
+#select gene modules based on standard deviation (> 0.1) and rename the cluster (from 1 to the number of clusters)
+
+B6WT_scigenex20.3 <- B6WT_scigenex20.3[cluster_stats(B6WT_scigenex20.3)$sd_total > 0.1, ] 
+B6WT_scigenex20.3 <- rename_clust(B6WT_scigenex20.3)
+nclust(B6WT_scigenex20.3)
+```
+ 
+```{r}
+#Check the statistics again
+plot_cluster_stats(cluster_stats(B6WT_scigenex20.3)) + 
+ ggplot2::theme(axis.text.y = ggplot2::element_blank(),
+                axis.text.x = element_text(angle=45, vjust = 0.5),
+                panel.grid = element_blank()) 
+```
+
+```{r}
+##Heatmap of representative genes
+B6WT_scigenex20.3 <- top_genes(B6WT_scigenex20.3)
+#By manual annotation
+Idents(miceWT)<-"manual.annotation"
+miceWT$manual.annotation <- factor(miceWT$manual.annotation, levels = c("DN3a","DN3b/ISP/DP blast","DPsm","DP69+","SP4 immature", "SP4 mature", "NKT", "Tgd"))
+plot_ggheatmap(B6WT_scigenex20.3, 
+               use_top_genes = FALSE,
+               ident=Idents(miceWT),
+               hide_gene_name = T) + ggtitle("Heatmap of Co-Expressed Gene Modules Identified by SciGeneX (k = 20, inflation= 3) grouped by cell types") +theme(strip.text.y = element_text(size=4))
+#By cell cycle : 
+Idents(miceWT)<-"Phase"
+plot_ggheatmap(B6WT_scigenex20.3, 
+               use_top_genes = TRUE,
+               ident=Idents(miceWT)) + ggtitle("Heatmap of Co-Expressed Gene Modules Identified by SciGeneX (k = 20, inflation= ) grouped by cell cycle") +
+               theme(strip.text.y = element_text(size=4))
+# Modules associate with phase :
+```
+
+#Save object 
+```{r}
+#save(B6WT_scigenex20.3, file= "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/B6/B6WT_scigenex20.3.Robj")
+#save(B6WT_scigenex20, file= "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/B6/B6WT_scigenex20.Robj")
+```
+
+# Calculate AUCell scores for merged Object
+```{r}
+#load(file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/B6/merge_B6ccregress_2024.Robj")
+exprMatrix <- b6.combined.cc@assays$RNA$data
+#Gene sets
+#load(file= B6WT_scigenex20.3, file= "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/B6/B6WT_scigenex20.3.Robj")
+geneSets_WT <- B6WT_scigenex20.3@gene_clusters
+
+#Calculate Gene Set Activities
+# Build the rankings of the genes across cells (which genes are being expressed)
+geneRankings_WT <- AUCell_buildRankings(exprMatrix, plotStats=TRUE)
+plotGeneCount(exprMatrix)
+# Calculate the AUC for each gene set
+aucellScores_WT <- AUCell_calcAUC(geneSets_WT, geneRankings_WT)
+
+##Adding AUCell scores to merged Object (b6.combined.cc), named AUC_WT
+#Extract the AUCell scores matrix
+aucScoresMatrix_WT <- aucellScores_WT@assays@data$AUC
+# Create a new assay object with the matrix
+AUC_WT <- CreateAssayObject(data = aucScoresMatrix_WT)
+b6.combined.cc[['AUC_WT']] <- AUC_WT
+```
+
+#Adding AUCell scores to miceWT subset
+```{r}
+WTCells <- rownames(b6.combined.cc@meta.data[b6.combined.cc$stage == "Thymus-WT" | b6.combined.cc$stage == "Spleen-WT",])
+aucScoresMatrixWT <-  aucScoresMatrix_WT[,WTCells]
+AUCwt <- CreateAssayObject(counts = aucScoresMatrixWT)
+miceWT[['AUC']] <- AUCwt
+```
+
+# Getting AUCell threshold for each gene set
+```{r}
+set.seed(1234)
+par(mfrow=c(3,4)) 
+cells_assignment <- AUCell_exploreThresholds(aucScoresMatrix_WT, plotHist=TRUE, assign=TRUE) # 
+# warningMsg <- sapply(cells_assignment, function(x) x$aucThr$comment)
+# warningMsg[which(warningMsg!="")]
+# #The thresholds calcuated for each gene set
+# cells_assignment$`1`$aucThr$thresholds
+# 
+# #the threshold selected automatically for a given gene set
+# cells_assignment$`1`$aucThr$selected
+# 
+# #Plotting the AUC histogram of a specific gene set, and setting a new threshold:
+# geneSet1 <- rownames(aucellScores_WT)[grep("1", rownames(aucellScores_WT))]
+# AUCell_plotHist(aucellScores_WT[geneSet1,], aucThr=0.25)
+# abline(v=0.25)
+
+```
+
+```{r}
+FeaturePlot(miceWT, features = c("auc_1","auc_2","auc_3","auc_4","auc_5","auc_6","auc_7","auc_8","auc_9","auc_10"),order = T, reduction = "umap", pt.size = 0.2, ncol = 4 ) & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+
+FeaturePlot(miceWT, features = c("auc_11","auc_12","auc_13","auc_14","auc_15","auc_16","auc_17","auc_18","auc_19","auc_20"),order = T, reduction = "umap", pt.size = 0.2, ncol = 4 ) & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+
+```
+
+# Functional enrichment 
+```{r}
+genecomprow <- get_genes(B6WT_scigenex20.3, cluster = 18)
+CPenrich <- enrichGO(gene= genecomprow, OrgDb = 'org.Mm.eg.db', ont="BP",keyType = "SYMBOL",universe = backgroundrow) # org.Mm.eg.db genome mouse
+dotplot(CPenrich, showCategory=20,color = "p.adjust",x="Count")+ ggtitle("GO Enrichment") #+ coord_flip()+theme(axis.text.x = element_text(angle = 90, hjust = 1))
+#cnetplot(CPenrich, node_label="all", circular = T, color.params = list(foldChange = NULL , edge = FALSE , category = "#E5C494", gene = "#B3B3B3"))
+# Convert gene symbol to gene ID
+entrez_ids <- bitr(genecomprow, fromType = "SYMBOL", toType = "ENTREZID", OrgDb = org.Mm.eg.db)
+kegg <- enrichKEGG(gene = entrez_ids$ENTREZID,
+                 organism = 'mmu',
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.05,
+                 minGSSize = 10)
+dotplot(kegg) + ggtitle("KEGG Pathway Enrichment")
+```
+
+# Visualize AUC score on combined object 
+```{r}
+FeaturePlot(b6.combined.cc, features = c("aucwt_1","aucwt_2","aucwt_3","aucwt_4","aucwt_5","aucwt_6","aucwt_7","aucwt_8","aucwt_9","aucwt_10"),order = T, reduction = "umap", pt.size = 0.2, ncol = 4 ) & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+
+FeaturePlot(b6.combined.cc, features = c("aucwt_11","aucwt_12","aucwt_13","aucwt_14","aucwt_15","aucwt_16","aucwt_17","aucwt_18","aucwt_19","aucwt_20"),order = T, reduction = "umap", pt.size = 0.2, ncol = 4 ) & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+```
+
+#Median expression of WT gene modules in bc.combined.cc
+```{r}
+aucScoresMatrix_WT <- b6.combined.cc@assays$AUC_WT$data
+barcodes <- colnames(aucScoresMatrix_WT)
+clusters <- b6.combined.cc@meta.data[barcodes, "RNA_snn_res.1", drop = FALSE]
+aucScoresMatrix.mergedObj.vs.clusters <- cbind(clusters, t(aucScoresMatrix_WT))
+aucScoresMatrix.mergedObj.vs.clusters <- aucScoresMatrix.mergedObj.vs.clusters[rowSums(is.na(aucScoresMatrix.mergedObj.vs.clusters)) == 0, ]
+# Calculer la médiane pour chaque colonne, groupée par cluster
+auc.median.mergedObj <- aucScoresMatrix.mergedObj.vs.clusters %>%
+  group_by(RNA_snn_res.1) %>%
+  summarise(across(everything(), median, na.rm = TRUE))
+auc.median.mergedObj <- data.frame(auc.median.mergedObj, row.names = 1)
+colnames(auc.median.mergedObj) <- paste0("sig.",c(1:20))
+```
+
+#Cluster's identifications in bc.combined.cc based on WT gene modules
+```{r}
+# AUC score
+## DN1-DN3
+VlnPlot(b6.combined.cc, features = c("aucwt_11"), group.by = "RNA_snn_res.1") &geom_hline(yintercept = 0.035, linetype ="dashed", size = 1, color="black")&
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', 
+           show.legend = F)
+VlnPlot(b6.combined.cc, features = c("aucwt_20"), group.by = "RNA_snn_res.1") &geom_hline(yintercept = 0.06, linetype ="dashed", size = 1, color="black")&
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', 
+           show.legend = F)
+# #The thresholds calcuated for each gene set
+# cells_assignment$`11`$aucThr$thresholds
+# 
+# #the threshold selected automatically for a given gene set
+# cells_assignment$`5`$aucThr$selected
+DN <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.11>0.035,])
+
+
+## Tgd 
+VlnPlot(miceWT, features = "auc_7", group.by ="RNA_snn_res.1") +geom_hline(yintercept = 0.051, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+VlnPlot(b6.combined.cc, features = "aucwt_7", group.by = "RNA_snn_res.1") +geom_hline(yintercept = 0.04, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+Tgdsig <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.7>0.04,])
+
+## DP
+
+VlnPlot(miceWT, features = "auc_5", group.by ="RNA_snn_res.1") +geom_hline(yintercept = 0.22, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+VlnPlot(b6.combined.cc, features = "aucwt_5", group.by = "RNA_snn_res.1") +geom_hline(yintercept = 0.16, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+
+
+DP <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.5>0.16,])
+FeaturePlot(b6.combined.cc, features = c("Cd4","Cd8a") ,order = T, reduction = "umap", pt.size = 0.2) & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+
+# Cycling cell : 
+VlnPlot(miceWT, features = "auc_2", group.by ="RNA_snn_res.1") +geom_hline(yintercept = 0.11, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+VlnPlot(b6.combined.cc, features = "aucwt_1", group.by = "RNA_snn_res.1") +geom_hline(yintercept = 0.087, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+VlnPlot(b6.combined.cc, features = "aucwt_2", group.by = "RNA_snn_res.1") +geom_hline(yintercept = 0.12, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+cycling1 <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.1>0.087,])
+cycling2 <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.2>0.12,])
+cycling_cells <- union(cycling1, cycling2)
+
+#NK 
+VlnPlot(b6.combined.cc, features = "aucwt_12", group.by = "RNA_snn_res.1") +geom_hline(yintercept = 0.082, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+NK <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.12>0.082,])
+# Cytotoxity NKT
+VlnPlot(b6.combined.cc, features = "aucwt_13", group.by = "RNA_snn_res.1") +geom_hline(yintercept = 0.049, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+
+cyto <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.13>0.049,])
+NKT <- setdiff(cyto,NK)
+
+# SP
+VlnPlot(b6.combined.cc, features = "aucwt_6", group.by ="RNA_snn_res.1") +geom_hline(yintercept = 0.41, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+high.motility <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.6>0.41,])# high in all mature cells (low epression in DN and DP )
+VlnPlot(b6.combined.cc, features = "aucwt_4", group.by = "RNA_snn_res.1") +geom_hline(yintercept = 0.16, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+
+
+mature <-  rownames(auc.median.mergedObj[auc.median.mergedObj$sig.4>0.16,])
+SPmature <- setdiff(mature, union(NKT, Tgd))
+
+# adt_CD25
+VlnPlot(b6.combined.cc, features = "adt_CD25", group.by = "RNA_snn_res.1", sort = TRUE) +geom_hline(yintercept = 1, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+# adt_CD4 
+VlnPlot(b6.combined.cc, features = "adt_CD4", group.by = "RNA_snn_res.1", sort = TRUE) +geom_hline(yintercept = 0.75, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+
+
+# adt_CD8
+VlnPlot(b6.combined.cc, features = "adt_CD8", group.by = "RNA_snn_res.1") +geom_hline(yintercept = 2, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+
+#adt_CD69
+VlnPlot(b6.combined.cc, features = "adt_CD69", group.by = "RNA_snn_res.1") +geom_hline(yintercept = 0.1, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+FeaturePlot(b6.combined.cc, features = "adt_CD69",order = T, reduction = "umap", pt.size = 0.2) & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+# Myc 
+
+VlnPlot(b6.combined.cc, features = "Myc", group.by = "RNA_snn_res.1") +geom_hline(yintercept = 0.5, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+
+
+FeaturePlot(b6.combined.cc, features = "Myc",order = T, reduction = "umap", pt.size = 0.2) & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+
+Myc.pos <- c("2","3","4","6","7","8","9","10","11","14","15","17","18","19","20","21")
+
+# Creating rules to annotate cells
+DN <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.11>0.035,])
+NK <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.12>0.082,])
+cyto <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.13>0.049,])
+Mix <- setdiff(cyto,NK)
+Tgdsig <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.7>0.04,])
+Tgd <- setdiff(Tgdsig,union(NK,NKT))
+DP <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.5>0.16,])
+adtCD4pos <- c("14","22","3","4","8","9","17","2","0","1","5","10","6","21","15","19","11") # see VlnPlot
+adtCD8pos <- c("1","3","4","8","9","10","14","17","22")
+adtCD69pos <- c("14","10","17","2","6","19","21","15","11","7","18","23")
+Myc.pos <- c("2","3","4","6","7","8","9","10","11","14","15","17","18","19","20","21")
+DP_adt <- intersect(adtCD4pos,adtCD8pos) 
+adtSP4pos <- setdiff(adtCD4pos,DP_adt)
+adtSP8pos <- setdiff(adtCD8pos,DP_adt)
+cycling1 <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.1>0.087,])
+cycling2 <- rownames(auc.median.mergedObj[auc.median.mergedObj$sig.2>0.12,])
+cycling_cells <- union(cycling1, cycling2)
+DPblast <- intersect(intersect(DP_adt,cycling_cells),DP)
+DPblast_Myc <- intersect(DPblast,Myc.pos)
+DP69 <- intersect(DP,adtCD69pos)
+DP69_Myc <- intersect(DP69, Myc.pos)
+DPsm <- setdiff(intersect(DP_adt,DP),union(DPblast,DP69))
+DPsm_Myc <- intersect(DPsm,Myc.pos)
+mature <-  rownames(auc.median.mergedObj[auc.median.mergedObj$sig.4>0.16,])
+SPmature <- setdiff(mature, union(NKT, Tgd))
+SP4mature <- intersect(SPmature,adtSP4pos) # Cluster 0
+SP4immature <- setdiff(adtSP4pos,SP4mature)
+SP4_Myc <- intersect(adtSP4pos,Myc.pos)
+```
+
+
+```{r}
+#Annotation of cells from rules 
+Idents(b6.combined.cc) <- "RNA_snn_res.1"
+b6.combined.cc@meta.data$sig.annotation = "unknown"
+b6.combined.cc@meta.data[WhichCells(b6.combined.cc,idents = Myc.pos),]$sig.annotation ="Undefined Myc+"
+b6.combined.cc@meta.data[WhichCells(b6.combined.cc,idents = DN),]$sig.annotation ="DN-early DP"
+#b6.combined.cc@meta.data[WhichCells(b6.combined.cc,idents = DPblast),]$sig.annotation ="DPblast"
+b6.combined.cc@meta.data[WhichCells(b6.combined.cc,idents = DPblast_Myc),]$sig.annotation ="DPblast-Myc+"
+b6.combined.cc@meta.data[WhichCells(b6.combined.cc,idents = DP69),]$sig.annotation ="DP69+"
+b6.combined.cc@meta.data[WhichCells(b6.combined.cc,idents = DP69_Myc),]$sig.annotation ="DP69-Myc+"
+b6.combined.cc@meta.data[WhichCells(b6.combined.cc,idents = DPsm),]$sig.annotation ="DPsm"
+b6.combined.cc@meta.data[WhichCells(b6.combined.cc,idents = DPsm_Myc),]$sig.annotation ="DPsm-Myc+"
+b6.combined.cc@meta.data[WhichCells(b6.combined.cc,idents = SP4immature),]$sig.annotation ="SP4 immature"
+b6.combined.cc@meta.data[WhichCells(b6.combined.cc,idents = SP4mature),]$sig.annotation ="SP4 mature"
+b6.combined.cc@meta.data[WhichCells(b6.combined.cc,idents = SP4_Myc),]$sig.annotation ="SP4-Myc+"
+b6.combined.cc@meta.data[WhichCells(b6.combined.cc,idents = NK),]$sig.annotation ="NK"
+b6.combined.cc@meta.data[WhichCells(b6.combined.cc,idents = Mix ),]$sig.annotation ="Tgd/NK/NKT"
+b6.combined.cc@meta.data[WhichCells(b6.combined.cc,idents = Tgd),]$sig.annotation ="Tgd"
+
+b6.combined.cc$sig.annotation <- factor(b6.combined.cc$sig.annotation, levels = c("DN-early DP","DPsm","SP4 immature", "SP4 mature", "DPblast-Myc+","DPsm-Myc+","DP69-Myc+","SP4-Myc+","Undefined Myc+","Tgd/NK/NKT","Tgd","NK"))
+
+# Palette colors for "sig.annotation" in B6
+palette1 <- c("#F7FCB9FF","#D9F0A3FF","#5E9432FF","#3B7D31FF")
+names(palette1) <- c("DN-early DP","DPsm","SP4 immature", "SP4 mature")
+palette2 <- c("#F94A17","#DA5A5AFF","#E4002BFF","#C0392BFF")
+names(palette2) <- c("DPblast-Myc+","DPsm-Myc+","DP69-Myc+", "SP4-Myc+")
+palette3 <- c("#019875FF","#99B898FF","#88A0DCFF")
+names(palette3) <- c("Tgd/NK/NKT","Tgd","NK")
+palette4 <- c("#C71000")
+names(palette4) <- c("Undefined Myc+")
+DimPlot(b6.combined.cc, group.by = "sig.annotation", reduction = "umap", cols = c(palette1, palette2, palette3, palette4),label =F, label.size = 4 ,label.color = "black", pt.size = 1, repel =TRUE) &
+  NoLegend() + 
+  theme_void()+
+  theme(plot.title = element_text(hjust = 0.5))
+#save(b6.combined.cc,file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/B6/merge_B6ccregress_2024.Robj")
+```
+
+# Repartition of cells in Thymus
+```{r}
+Idents(b6.combined.cc) <- "stage"
+Thymus <- subset(b6.combined.cc, idents = c("Thymus-WT","Thymus-PreTum","Thymus-Tum"))
+data1 <- as.data.frame(prop.table(table(Thymus@meta.data$sig.annotation,Thymus@meta.data$stage),2)*100)
+data1 <-na.omit(data1)
+#order leukestage level
+data1$Var2 <- factor(data1$Var2, levels = c("Thymus-WT","Thymus-PreTum","Thymus-Tum"))
+cellnumber <- data.frame(colSums(table(Thymus@meta.data$MULTI_ID,Thymus@meta.data$stage)))
+cellnumber$stage <- rownames(cellnumber)
+row_order <-c("Thymus-WT","Thymus-PreTum","Thymus-Tum")
+cellnumber <- cellnumber[row_order,]
+stage <- data1$Var2
+Cell_types <- data1$Var1
+cell_order <-c("DN-early DP","DPsm","SP4 immature", "SP4 mature","DPblast-Myc+","DPsm-Myc+", "SP4-Myc+","Undefined Myc+","NKT","Tgd","NK","unknown")
+Cell_types <- factor(Cell_types, levels = rev(cell_order))
+Percentage <- data1$Freq
+text <- cellnumber$colSums.table.Thymus.meta.data.MULTI_ID..Thymus.meta.data.stage..
+ggplot(data1, aes(fill=Cell_types, y=Percentage, x=stage)) + 
+    geom_bar(position="stack", stat="identity", width=0.7)+
+   xlab("Stade of leukemia")+ylab("Percentage")+ theme(legend.position="bottom")+scale_fill_manual(values = c(palette1,palette2,palette3,palette4)) +theme_light()+geom_hline(yintercept=c(25,50,75), linetype="dashed", color = "grey60")+ annotate("text", x = 1:3, y=103, label = c(text))
+```
+
+
+# Repartition of cells in Spleen
+```{r}
+Idents(b6.combined.cc) <- "stage"
+Spleen <- subset(b6.combined.cc, idents = c("Spleen-WT","Spleen-PreTum","Spleen-Tum"))
+data2 <- as.data.frame(prop.table(table(Spleen@meta.data$sig.annotation,Spleen@meta.data$stage),2)*100)
+data2 <-na.omit(data2)
+#order leukestage level
+data2$Var2 <- factor(data2$Var2, levels = c("Spleen-WT","Spleen-PreTum","Spleen-Tum"))
+cellnumber <- data.frame(colSums(table(Spleen@meta.data$MULTI_ID,Spleen@meta.data$stage)))
+cellnumber$stage <- rownames(cellnumber)
+row_order <-c("Spleen-WT","Spleen-PreTum","Spleen-Tum")
+cellnumber <- cellnumber[row_order,]
+stage <- data2$Var2
+Cell_types <- data2$Var1
+cell_order <-c("DN-early DP","DPsm","SP4 immature", "SP4 mature","DPblast-Myc+","DPsm-Myc+", "SP4-Myc+","Undefined Myc+","NKT","Tgd","NK","unknown")
+Cell_types <- factor(Cell_types, levels = rev(cell_order))
+Percentage <- data2$Freq
+text <- cellnumber$colSums.table.Spleen.meta.data.MULTI_ID..Spleen.meta.data.stage..
+ggplot(data2, aes(fill=Cell_types, y=Percentage, x=stage)) + 
+    geom_bar(position="stack", stat="identity", width=0.7)+
+   xlab("Stade of leukemia")+ylab("Percentage")+ theme(legend.position="bottom")+scale_fill_manual(values = c(palette1,palette2,palette3,palette4)) +theme_light()+geom_hline(yintercept=c(25,50,75), linetype="dashed", color = "grey60")+ annotate("text", x = 1:3, y=103, label = c(text))
+```
+
+```{r}
+DotPlot(b6.combined.cc, features = c("Sox13","Tox2","Pdcd1","Trgv2", "Tcrg-C2", "Tcrg-C1", "Plac8", "Tcrg-C4", "Trdc", "Coro2a","Eomes"), group.by = "sig.annotation") + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) + scale_colour_gradientn(colours = (viridis(4))) + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis() + labs(title = "Expression of genes in module 7 by clusters") + coord_flip()
+```
+
+# Idents ordering
+```{r}
+b6.combined.cc$sig.annotation <- factor(b6.combined.cc$sig.annotation, levels = c("DN-early DP","DPsm","SP4 immature", "SP4 mature","DPblast-Myc+","DPsm-Myc+", "SP4-Myc+","Undefined Myc+","NKT","Tgd","NK"))
+
+```
+
+
+```{r}
+FeaturePlot(b6.combined.cc, features = c("Cd4","Cd8a","adt_CD4","adt_CD8"),order = T, reduction = "umap", pt.size = 0.5, ncol = 2) & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+Idents(b6.combined.cc) <-"sig.annotation"
+VlnPlot(b6.combined.cc, features = c("Cd4","Cd8a","adt_CD4","adt_CD8"),idents =c("DN-early DP","DPsm","SP4 immature", "SP4 mature","DPblast-Myc+","DPsm-Myc+", "SP4-Myc+","Undefined Myc+","NKT","Tgd","NK"),  group.by = "sig.annotation", pt.size = 0, ncol = 2)
+VlnPlot(b6.combined.cc, features = c("Myc"),idents =c("DN-early DP","DPsm","SP4 immature", "SP4 mature","DPblast-Myc+","DPsm-Myc+", "SP4-Myc+","Undefined Myc+","NKT","Tgd","NK"),  group.by = "sig.annotation", pt.size = 0)
+```
+
+```{r}
+Idents(b6.combined.cc) <- "MULTI_ID"
+#Adding miceID column into metadata:
+id <- c("500","498","585","578","580","582")
+for (i in id) {
+  # Find cells in Thymus-i or Spleen-i
+  cells_to_annotate <- WhichCells(b6.combined.cc, idents = c(paste0("Thymus-", i), paste0("Spleen-", i)))
+  # Adding miceID for these cells
+  b6.combined.cc@meta.data[cells_to_annotate, "miceID"] <- i
+}
+b6.combined.cc@meta.data[WhichCells(b6.combined.cc, idents = "Thymus-497"), "miceID"] <- "T497"
+b6.combined.cc@meta.data[WhichCells(b6.combined.cc, idents = "Thymus-499"), "miceID"] <- "T499"
+b6.combined.cc@meta.data[WhichCells(b6.combined.cc, idents = "Spleen-497+499"), "miceID"] <- "S497+499"
+```
+
+```{r}
+#markers_WT <- FindAllMarkers(miceWT)
+#write.csv(markers_WT, file ="/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/B6/Allmarkers_B6WT.csv")
+B6_WTmarkers <- read.csv(file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/B6/Allmarkers_B6WT.csv")
+gene_list_WT <- B6_WTmarkers%>%
+  group_by(cluster) %>%
+  filter(p_val_adj <= 0.05 & avg_log2FC > 0) %>%
+  arrange(desc(avg_log2FC)) %>%
+  summarise(genes = list(gene)) %>%
+  deframe()
+```
+
+```{r}
+ggplotly(DimPlot(b6.combined.cc, group.by = "stage",shape.by = "MULTI_ID" ))
+```
+
+# Thymus-PreTum vs Thymus-Tum
+
+```{r}
+colors = c(rep("#fac341",3),rep("#BB0A21",10),rep("#BEC0C2FF",12))
+names(colors) <- c("3","4","9","17","2","6","19","21","15","11","7","18","14","1","0","5","8","10","12","13","16","20","22","23","24")
+ggplotly(DimPlot(b6.combined.cc, group.by = "RNA_snn_res.1",shape.by = "sig.annotation",reduction = "umap" , cols = colors) + labs(title = "DPsm and DPsm-Myc+")&
+    NoLegend() + 
+    theme_void()+
+    theme(plot.title = element_text(hjust = 0.5, face = "bold")))
+```
+
+
+```{r}
+Clusters.ThyPre <- b6.combined.cc@meta.data %>%
+  filter(stage==c("Thymus-PreTum","Thymus-Tum") & RNA_snn_res.1 %in% c("3","4","9")) %>%
+  rownames()
+Clusters.ThyTum <- b6.combined.cc@meta.data %>%
+  filter(stage==c("Thymus-Tum") & RNA_snn_res.1 %in% c("17","2","6","19","21","15","11","7","18","14")) %>%
+  rownames()
+degb6_TumvsPreTum.T <- FindMarkers(b6.combined.cc, ident.1 = Clusters.ThyTum, ident.2 = Clusters.ThyPre)
+degb6_TumvsPreTum.T$gene <- rownames(degb6_TumvsPreTum.T)
+##Adding annotation to DE genes
+degb6_TumvsPreTum.T <- degb6_TumvsPreTum.T %>%
+    left_join(y = unique_gene_annotation, by = c("gene" = "Symbol"))
+
+#add abs value to table
+degb6_TumvsPreTum.T$abs <- abs(degb6_TumvsPreTum.T$avg_log2FC)
+degb6_TumvsPreTum.T <- degb6_TumvsPreTum.T %>%
+  filter(p_val_adj <= 0.05 & (pct.1 > 0.05 & pct.2>0.05)) %>%
+  dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name, abs)
+write.csv(degb6_TumvsPreTum.T, "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/B6/degb6_TumvsPreTum.T.csv", row.names=FALSE)
+
+```
+
+```{r}
+degb6_TumvsPreTum.T <- read.csv(file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/B6/degb6_TumvsPreTum.T.csv")
+```
+
+```{r}
+extract_upDEGs <- function (df.deg, avglog2fc_cutoff, p_val_adj_cutoff, pct_cutoff,d.pct_cutoff) {
+    filtered_DEGs <- df.deg %>%
+      filter(p_val_adj <= p_val_adj_cutoff & (pct.1 > pct_cutoff | pct.2 > pct_cutoff) & abs(pct.1-pct.2)>=d.pct_cutoff) %>%
+      filter(avg_log2FC >= avglog2fc_cutoff) %>%
+      dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name, abs)
+}
+
+extract_downDEGs <- function (df.deg, avglog2fc_cutoff, p_val_adj_cutoff, pct_cutoff,d.pct_cutoff) {
+    filtered_DEGs <- df.deg %>%
+      filter(p_val_adj <= p_val_adj_cutoff & (pct.1 > pct_cutoff | pct.2 > pct_cutoff) & abs(pct.1-pct.2)>=d.pct_cutoff) %>%
+      filter(avg_log2FC <= avglog2fc_cutoff) %>%
+      dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name, abs)
+}
+```
+
+
+```{r}
+upreg_TumvsPreTumb6 <-extract_upDEGs(degb6_TumvsPreTum.T,p_val_adj_cutoff = 1e-20 ,pct_cutoff = 0.3 , avglog2fc_cutoff = 1,d.pct_cutoff = 0)
+downreg_TumvsPreTumb6 <- extract_downDEGs(degb6_TumvsPreTum.T,p_val_adj_cutoff = 1e-20 ,pct_cutoff = 0.3 , avglog2fc_cutoff = -1,d.pct_cutoff = 0)
+```
+
+```{r}
+ordered_upreg_TumvsPreTumb6 <- upreg_TumvsPreTumb6 %>%
+  arrange(p_val_adj) %>%
+  dplyr::select(gene, Name)
+
+ordered_downreg_TumvsPreTumb6 <- downreg_TumvsPreTumb6 %>%
+  arrange(p_val_adj) %>%
+  dplyr::select(gene, Name)
+```
+
+
+# Volcano plot
+```{r}
+markers <- degb6_TumvsPreTum.T
+# Remplacer les valeurs de p_val_adj égales à 0 par une petite valeur positive
+markers$p_val_adj[markers$p_val_adj == 0] <- 1e-315
+
+markers$diffexpressed <- "NO"
+markers$diffexpressed[markers$avg_log2FC > 1 & markers$p_val_adj < 1e-20] <- "UP"
+markers$diffexpressed[markers$avg_log2FC < -1 & markers$p_val_adj <1e-20] <- "DOWN"
+# Sélectionner les 20 gènes les plus significatifs
+top_genes <- markers %>% filter((p_val_adj < 1e-200 | abs(avg_log2FC) > 3) & !(markers$diffexpressed == "NO"))
+markers$delabel <- ifelse(markers$gene %in% top_genes$gene, markers$gene, NA)
+
+
+
+volcano_plot <- ggplot(data = markers, aes(x = avg_log2FC, y = -log10(p_val_adj), col = diffexpressed, label = delabel)) +
+  geom_vline(xintercept = c(-1,1 ), col = "gray", linetype = 'dashed') +
+  geom_hline(yintercept = -log10(1e-20), col = "gray", linetype = 'dashed') +
+  geom_point(size = 2) +
+  scale_color_manual(values = c("#00AFBB", "grey", "#bb0c00"), # to set the colours of our variable
+                     labels = c("Downregulated", "Not significant", "Upregulated")) + # to set the labels in case we want to overwrite the categories from the dataframe (UP, DOWN, NO)
+  coord_cartesian(ylim = c(0, 350), xlim = c(-6, 6)) + # since some genes can have minuslog10padj of inf, we set these limits
+  labs(color = 'DEG', #legend_title,
+       x = expression("avg_log"[2]*"FC Tum vs PreTum"), y = expression("-log"[10]*"(p_val_adj)")) +
+  scale_x_continuous(breaks = seq(-6, 6, 2)) + # to customise the breaks in the x axis
+  #ggtitle('Thf-like cells in severe COVID vs healthy patients') + # Plot title
+  geom_text_repel(max.overlaps = Inf) # To show all labels 
+# Afficher le plot
+print(volcano_plot)
+```
+
+```{r}
+
+CPenrich <- enrichGO(gene= downreg_TumvsPreTumb6$gene, OrgDb = 'org.Mm.eg.db', ont="BP",keyType = "SYMBOL",universe = backgroundrowb6) # org.Mm.eg.db genome mouse
+dotplot(CPenrich, showCategory=7,color = "p.adjust",x="GeneRatio", decreasing =T, size = "GeneRatio")+ ggtitle("GO Enrichment") #+ coord_flip()+theme(axis.text.x = element_text(angle = 90, hjust = 1))
+#cnetplot(CPenrich, node_label="all", circular = T, color.params = list(foldChange = NULL , edge = FALSE , category = "#E5C494", gene = "#B3B3B3"))
+# Convert gene symbol to gene ID
+entrez_ids <- bitr(downreg_TumvsPreTumb6$gene, fromType = "SYMBOL", toType = "ENTREZID", OrgDb = org.Mm.eg.db)
+kegg <- enrichKEGG(gene = entrez_ids$ENTREZID,
+                 organism = 'mmu',
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.05,
+                 minGSSize = 8)
+dotplot(kegg,  showCategory=5,color = "p.adjust",x="p.adjust", decreasing =F, size = "GeneRatio") + ggtitle("KEGG Pathway Enrichment")
+```
+
+```{r}
+
+CPenrich <- enrichGO(gene= upreg_TumvsPreTumb6$gene, OrgDb = 'org.Mm.eg.db', ont="BP",keyType = "SYMBOL",universe = backgroundrowb6) # org.Mm.eg.db genome mouse
+dotplot(CPenrich, showCategory=20,color = "p.adjust",x="Count")+ ggtitle("GO Enrichment") #+ coord_flip()+theme(axis.text.x = element_text(angle = 90, hjust = 1))
+#cnetplot(CPenrich, node_label="all", circular = T, color.params = list(foldChange = NULL , edge = FALSE , category = "#E5C494", gene = "#B3B3B3"))
+# Convert gene symbol to gene ID
+entrez_ids <- bitr(downreg_TumvsPreTumb6$gene, fromType = "SYMBOL", toType = "ENTREZID", OrgDb = org.Mm.eg.db)
+kegg <- enrichKEGG(gene = entrez_ids$ENTREZID,
+                 organism = 'mmu',
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.05,
+                 minGSSize = 8)
+dotplot(kegg, x = "Count", orderBy = "x", size = "GeneRatio",showCategory = 5, decreasing=T) + ggtitle("KEGG Pathway Enrichment")
+```
+
+# Physiological SP4 and leukemic SP4 
+```{r, message=FALSE}
+ Idents(b6.combined.cc) <- "sig.annotation"
+ degb6.SP4vsSP4Myc <- FindMarkers(b6.combined.cc, ident.1 ="SP4 mature", ident.2 = "SP4-Myc+")
+ degb6.SP4vsSP4Myc$gene <- rownames(degb6.SP4vsSP4Myc)
+ #Adding annotation to DE genes
+ degb6.SP4vsSP4Myc <- degb6.SP4vsSP4Myc %>%
+   left_join(y = unique_gene_annotation, by = c("gene" = "Symbol"))
+ degb6.SP4vsSP4Myc$abs <- abs(degb6.SP4vsSP4Myc$avg_log2FC)
+degb6.SP4vsSP4Myc <- degb6.SP4vsSP4Myc %>%
+  filter(p_val_adj <= 0.05 & (pct.1 > 0.05 & pct.2>0.05)) %>%
+ dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name,abs)
+
+ write.csv(degb6.SP4vsSP4Myc, "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/B6/Ddegb6.SP4vsSP4Myc.csv", row.names=FALSE)
+degb6.SP4vsSP4Myc <- read.csv("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/B6/Ddegb6.SP4vsSP4Myc.csv", h= T, sep = ",")
+```
+
+```{r}
+SP4Myc_downdeg <- extract_upDEGs(degb6.SP4vsSP4Myc,p_val_adj_cutoff = 0.05 ,pct_cutoff = 0.05 , avglog2fc_cutoff = 1,d.pct_cutoff = 0.3 )
+SP4Myc_updeg <- extract_downDEGs(degb6.SP4vsSP4Myc,p_val_adj_cutoff = 0.05 ,pct_cutoff = 0.05 , avglog2fc_cutoff = -1,d.pct_cutoff = 0.3 )
+```
+#  Cluster 14 vs cluster 10 (DP69+ Myc)
+```{r, message=FALSE}
+ Idents(b6.combined.cc) <- "RNA_snn_res.1"
+ degb6.DP69Myc.14vs10 <- FindMarkers(b6.combined.cc, ident.1 ="14", ident.2 = "10")
+degb6.DP69Myc.14vs10$gene <- rownames(degb6.DP69Myc.14vs10)
+ #Adding annotation to DE genes
+degb6.DP69Myc.14vs10 <-degb6.DP69Myc.14vs10 %>%
+   left_join(y = unique_gene_annotation, by = c("gene" = "Symbol"))
+degb6.DP69Myc.14vs10$abs <- abs(degb6.DP69Myc.14vs10$avg_log2FC)
+degb6.DP69Myc.14vs10 <-degb6.DP69Myc.14vs10 %>%
+  filter(p_val_adj <= 0.05 & (pct.1 > 0.05 & pct.2>0.05)) %>%
+ dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name,abs)
+
+ write.csv(degb6.DP69Myc.14vs10, "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/B6/Ddegb6.DP69Myc.14vs10.csv", row.names=FALSE)
+degb6.DP69Myc.14vs10 <- read.csv("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/B6/Ddegb6.DP69Myc.14vs10.csv", h= T, sep = ",")
+```
+
+# DPsmMyc vs DPsm physio
+
+```{r}
+palette1 <- c( "#88AB38FF","#5E9432FF","#3B7D31FF","#225F2FFF")
+
+# Palette colors for "sig.annotation" in B6
+palette1 <- c("#B4BF3AFF","#88AB38FF","#5E9432FF","#3B7D31FF")
+names(palette1) <- c("DN-early DP","DPsm","SP4 immature", "SP4 mature")
+palette2 <- c("#FF847CFF","#E84A5FFF","#E4002BFF","#C0392BFF")
+names(palette2) <- c("DPblast-Myc+","DPsm-Myc+","DP69-Myc+", "SP4-Myc+")
+palette3 <- c("#019875FF","#99B898FF","#FECEA8FF")
+names(palette3) <- c("Tgd/NK/NKT","Tgd","NK")
+palette4 <- c("#8E2322FF")
+names(palette4) <- c("Undefined Myc+")
+
+colors = c("#5E9432FF","#E84A5FFF",rep("#BEC0C2FF",23))
+names(colors) <- c("1","3","0","2","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24")
+ggplotly(DimPlot(b6.combined.cc, group.by = "RNA_snn_res.1",shape.by = "sig.annotation",reduction = "umap" , cols = colors) + labs(title = "DPsm and DPsm-Myc+")&
+    NoLegend() + 
+    theme_void()+
+    theme(plot.title = element_text(hjust = 0.5, face = "bold")))
+```
+
+
+```{r}
+# Idents(b6.combined.cc)<-"RNA_snn_res.1"
+# degb6.DPsmMycvsDPsmWT <- FindMarkers(b6.combined.cc, ident.1 = "3", ident.2 = "1")
+#  degb6.DPsmMycvsDPsmWT$gene <- rownames(degb6.DPsmMycvsDPsmWT)
+# #Adding annotation to DE genes
+# degb6.DPsmMycvsDPsmWT <- degb6.DPsmMycvsDPsmWT %>%
+#   left_join(y = unique_gene_annotation, by = c("gene" = "Symbol"))
+# degb6.DPsmMycvsDPsmWT$abs <- abs(degb6.DPsmMycvsDPsmWT$avg_log2FC)
+# degb6.DPsmMycvsDPsmWT <- degb6.DPsmMycvsDPsmWT %>%
+#  filter(p_val_adj <= 0.05 & (pct.1 > 0.05 & pct.2>0.05)) %>%
+# dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name,abs)
+# write.csv(degb6.DPsmMycvsDPsmWT, file ="/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/B6/degb6.DPsmMycvsDPsmWT.csv", row.names = FALSE)
+degb6.DPsmMycvsDPsmWT <- read.csv(file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/B6/degb6.DPsmMycvsDPsmWT.csv", h=T,)
+```
+
+```{r}
+# Créer un masque pour les gènes ribosomiaux (peuvent commencer par 'RPS' ou 'RPL' pour les gènes ribosomaux de protéines)
+ribo_mask_b6 <- grepl("^Rpl|^Rps", degb6.DPsmMycvsDPsmWT$gene)
+# Filtrer le dataframe pour exclure ces gènes
+filtered_degb6.DPsmMycvsDPsmWT <- degb6.DPsmMycvsDPsmWT[!(ribo_mask_b6), ]
+b6_cycling_genes <- c(B6WT_scigenex20.3@gene_clusters$`1`, B6WT_scigenex20.3@gene_clusters$`2`)
+filtered_degb6.DPsmMycvsDPsmWT <- filtered_degb6.DPsmMycvsDPsmWT %>%
+  filter(!(gene %in% b6_cycling_genes))
+
+degb6.DPsmMycvsDPsmWT_up <- extract_upDEGs(filtered_degb6.DPsmMycvsDPsmWT,p_val_adj_cutoff = 1e-80 ,pct_cutoff = 0.3 , avglog2fc_cutoff = 1,d.pct_cutoff = 0)
+degb6.DPsmMycvsDPsmWT_down <- extract_downDEGs(filtered_degb6.DPsmMycvsDPsmWT,p_val_adj_cutoff = 1e-10 ,pct_cutoff = 0.3, avglog2fc_cutoff = -0.5,d.pct_cutoff = 0)
+
+
+ordered_degb6.DPsmMycvsDPsmWT <- degb6.DPsmMycvsDPsmWT_down %>%
+  arrange(desc(avg_log2FC))
+PlotDEG(df.deg = degb6.DPsmMycvsDPsmWT,threshold.abs.log2FC = 4, pct1 = 0.05,pct2 = 0.05,y.lim = c(-10,10),label.1 = "DPsm (Myc+)", label.2 = "DPsm (WT)", mid.p = 30)
+
+```
+
+
+```{r}
+# Select markers for plotting
+markers.use <- filtered_degb6.DPsmMycvsDPsmWT %>%
+      filter(p_val_adj <= 1e-10 & (pct.1 > 0.3 | pct.2 > 0.3)) %>%
+      arrange(desc(avg_log2FC)) %>%
+      top_n(50)
+markers.use <- mutate(markers.use,
+                        gene = factor(gene, levels = unique(gene)),
+                        logpval = -log10(p_val_adj))
+  # Plot
+  ggplot(markers.use, aes(x = gene, y = avg_log2FC, fill = logpval)) +
+    geom_bar(stat = "identity", width = .6) +
+    ylim(c(-5,5)) +
+    labs(title = "DEG OTII B6 - DPsm-Myc+ vs DPsm", y = "avg_Log2FC", x = "Genes differentially expressed") +
+    theme_tufte() +  # Assuming ggfortify is installed
+    theme(plot.title = element_text(hjust = 0.5), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),axis.text.y = element_text(color = "black"), axis.ticks = element_blank()) +
+    scale_fill_gradient2(low = 'red', mid = 'orange', high = 'blue',midpoint = 150) +
+    coord_flip()  # Flip axes for better visualization
+```
+
+
+
+```{r}
+
+CPenrich <- enrichGO(gene= degb6.DPsmMycvsDPsmWT_up$gene, OrgDb = 'org.Mm.eg.db', ont="BP",keyType = "SYMBOL",universe = backgroundrowb6) # org.Mm.eg.db genome mouse
+write.csv(CPenrich@result, file ="/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/B6/GO.degb6.DPsmMycvsDPsmWT_down.csv", row.names = FALSE)
+dotplot(CPenrich, showCategory=10,color = "p.adjust",x="GeneRatio", decreasing =T)+ ggtitle("Top 10 significant GO terms") #+ coord_flip()+theme(axis.text.x = element_text(angle = 90, hjust = 1))
+#cnetplot(CPenrich, node_label="all", circular = T, color.params = list(foldChange = NULL , edge = FALSE , category = "#E5C494", gene = "#B3B3B3"))
+# Convert gene symbol to gene ID
+entrez_ids <- bitr(degb6.DPsmMycvsDPsmWT_down$gene, fromType = "SYMBOL", toType = "ENTREZID", OrgDb = org.Mm.eg.db)
+kegg <- enrichKEGG(gene = entrez_ids$ENTREZID,
+                 organism = 'mmu',
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.05,
+                 minGSSize = 7)
+dotplot(kegg, x = "Count", orderBy = "x", size = "GeneRatio",showCategory = 2, decreasing=T) + ggtitle("KEGG Pathway Enrichment")
+
+heatplot(CPenrich,foldChange=degb6.DPsmMycvsDPsmWT_down$avg_log2FC,pvalue=CPenrich@result$p.adjust, showCategory=15)
+gseaplot2(CPenrich, geneSetID = 1:3)
+```
+
+
+```{r}
+Idents(b6.combined.cc) <- "sig.annotation"
+DPsm.cells <- sample(colnames(subset(b6.combined.cc, idents = "DPsm")), 100) ## Randomly select clones for the heatmap
+DPsmMyc.cells <- sample(colnames(subset(b6.combined.cc, idents = "DPsm-Myc+")), 100) ## Randomly select clones for the heatmap
+up_genes <- ordered_degb6.DPsmMycvsDPsmWT %>% top_n(50,wt =avg_log2FC)
+down_genes <- ordered_degb6.DPsmMycvsDPsmWT %>% top_n(-50,wt=avg_log2FC)
+DoHeatmap(b6.combined.cc, features = c(up_genes$gene, down_genes$gene)  , cells = c(DPsm.cells,DPsmMyc.cells), size = 3.5, hjust = 1, raster = FALSE)
+```
+
+```{r}
+scores <- ordered_degb6.DPsmMycvsDPsmWT$avg_log2FC
+names(scores) <- ordered_degb6.DPsmMycvsDPsmWT$gene
+#Retrieve Mouse (hallmark) gene set
+msigdbr_df <- msigdbr(species = "Mus musculus", category = "M5")
+head(msigdbr_df)
+# fixing format to work with fgsea
+pathwaysH = split(x = msigdbr_df$gene_symbol, f = msigdbr_df$gs_name)
+
+# run fgsea enrichment
+fgseaRes <- fgsea(pathways=pathwaysH, scores)
+topPathways <- fgseaRes %>%
+  dplyr::filter(padj < 0.9) %>%   # Filtre par valeur p ajustée
+  dplyr::top_n(10, abs(NES))       # Sélection des 10 pathways les plus significatifs
+
+ggplot(topPathways, aes(x=reorder(pathway, NES), y=NES, fill=padj)) +
+  geom_col() +
+  coord_flip() +  # Inverser les axes pour un meilleur affichage
+  labs(x="Pathway", y="Normalized Enrichment Score (NES)", title="Top 10 Enriched Pathways") +
+  scale_fill_gradient2(low="blue", high="red", midpoint=0.05, name="P-adj",
+                       limit=c(0, max(topPathways$padj))) +
+  theme_minimal()
+```
+
+# Dying cells 
+```{r}
+Idents(b6.combined.cc)<-"RNA_snn_res.1"
+degb6.Dyingcells <- FindMarkers(b6.combined.cc, ident.1 = "8") # This cluster contains dying cells (death by neglect ???)
+degb6.Dyingcells$gene <- rownames(degb6.Dyingcells)
+degb6.Dyingcells <- degb6.Dyingcells %>%
+    left_join(y = unique_gene_annotation, by = c("gene" = "Symbol"))
+#add abs value to table
+degb6.Dyingcells$abs <- abs(degb6.Dyingcells$avg_log2FC)
+degb6.Dyingcells <- degb6.Dyingcells %>%
+  filter(p_val_adj <= 0.05 & (pct.1 > 0.05 & pct.2>0.05)) %>%
+  dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name, abs)
+write.csv(degb6.Dyingcells, file ="/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/B6/degb6.Dyingcells.csv", row.names = FALSE)
+```
+
+```{r}
+
+CPenrich <- enrichGO(gene= downreg_TumvsPreTumb6$gene, OrgDb = 'org.Mm.eg.db', ont="BP",keyType = "SYMBOL",universe = backgroundrowb6) # org.Mm.eg.db genome mouse
+
+dotplot(CPenrich, showCategory=20,color = "p.adjust",x="Count")+ ggtitle("GO Enrichment") #+ coord_flip()+theme(axis.text.x = element_text(angle = 90, hjust = 1))
+#cnetplot(CPenrich, node_label="all", circular = T, color.params = list(foldChange = NULL , edge = FALSE , category = "#E5C494", gene = "#B3B3B3"))
+# Convert gene symbol to gene ID
+entrez_ids <- bitr(downreg_TumvsPreTumb6$gene, fromType = "SYMBOL", toType = "ENTREZID", OrgDb = org.Mm.eg.db)
+kegg <- enrichKEGG(gene = entrez_ids$ENTREZID,
+                 organism = 'mmu',
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.05,
+                 minGSSize = 10)
+dotplot(kegg) + ggtitle("KEGG Pathway Enrichment")
+```
+
+# Volcano plot
+```{r}
+markers <- degb6_TumvsPreTum.T
+# Remplacer les valeurs de p_val_adj égales à 0 par une petite valeur positive
+markers$p_val_adj[markers$p_val_adj == 0] <- 1e-300
+
+markers$diffexpressed <- "NO"
+markers$diffexpressed[markers$avg_log2FC > 1 & markers$p_val_adj < 1e-30] <- "UP"
+markers$diffexpressed[markers$avg_log2FC < -1 & markers$p_val_adj < 1e-30] <- "DOWN"
+# Sélectionner les 20 gènes les plus significatifs
+top_genes <- markers %>%
+  arrange(p_val_adj, desc(abs(avg_log2FC))) %>%
+  top_n(n=20, wt = -p_val_adj)
+markers$delabel <- ifelse(markers$gene %in% top_genes$gene, markers$gene, NA)
+
+
+
+volcano_plot <- ggplot(data = markers, aes(x = avg_log2FC, y = -log10(p_val_adj), col = diffexpressed, label = delabel)) +
+  geom_vline(xintercept = c(-1, 1), col = "gray", linetype = 'dashed') +
+  geom_hline(yintercept = -log10(1e-20), col = "gray", linetype = 'dashed') +
+  geom_point(size = 2) +
+  scale_color_manual(values = c("#bb0c00", "grey", "#00AFBB"), # to set the colours of our variable
+                     labels = c("Downregulated", "Not significant", "Upregulated")) + # to set the labels in case we want to overwrite the categories from the dataframe (UP, DOWN, NO)
+  coord_cartesian(ylim = c(0, 400), xlim = c(-6, 8)) + # since some genes can have minuslog10padj of inf, we set these limits
+  labs(color = 'DEG', #legend_title,
+       x = expression("avg_log"[2]*"FC"), y = expression("-log"[10]*"p_val_adj")) +
+  scale_x_continuous(breaks = seq(-10, 10, 2)) + # to customise the breaks in the x axis
+  #ggtitle('Thf-like cells in severe COVID vs healthy patients') + # Plot title
+  geom_text_repel(max.overlaps = Inf) # To show all labels 
+# Afficher le plot
+print(volcano_plot)
+
+
+```
+
+

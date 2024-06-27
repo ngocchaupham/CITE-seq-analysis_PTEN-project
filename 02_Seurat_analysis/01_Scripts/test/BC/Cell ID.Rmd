@@ -1,0 +1,143 @@
+---
+title: "Cellid"
+output: html_document
+date: "2024-03-06"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+if(!require("tidyverse")) install.packages("tidyverse")
+if(!require("ggpubr")) install.packages("ggpubr")
+BiocManager::install("CelliD")
+library(CelliD)
+library(tidyverse) # general purpose library for data handling
+library(ggpubr) #library for plotting
+library(Seurat)
+library(biomaRt)
+```
+
+
+```{r}
+merged.bc.cellid <- bc.combined.cc
+merged.bc.cellid <- FindVariableFeatures(merged.bc.cellid, selection.method = "vst", nfeatures = 2000)
+
+# Identify the 10 most highly variable genes
+var.genes <- VariableFeatures(merged.bc.cellid)
+adt <- rownames(merged.bc.cellid@assays$ADT)
+# plot variable features with and without labels
+plot1 <- VariableFeaturePlot(merged.bc.cellid)
+plot2 <- LabelPoints(plot = plot1, points = var.genes, repel = TRUE)
+plot1 + plot2
+
+merged.bc.cellid <- RunMCA(merged.bc.cellid, nmcs = 50, features = var.genes , assay = "RNA", reduction.name = "mca.rna")
+ElbowPlot(merged.bc.cellid, ndims = 50, reduction = "mca.rna")
+# Determine percent of variation associated with each PC
+pct <- merged.bc.cellid[["mca.adt"]]@stdev / sum(merged.bc.cellid[["mca.adt"]]@stdev) * 100
+# # Calculate cumulative percents for each PC
+cumu <- cumsum(pct)
+# # Determine which PC exhibits cumulative percent greater than 90% and % variation associated with the PC as less than 5
+co1 <- which(cumu > 90 & pct < 5)[1]
+print(co1)
+merged.bc.cellid <- RunMCA(merged.bc.cellid, nmcs = 14, features = adt , assay = "ADT", reduction.name = "mca.adt")
+
+ElbowPlot(merged.bc.cellid, ndims = 13, reduction = "mca.adt")
+merged.bc.cellid <- FindMultiModalNeighbors(
+  merged.bc.cellid, reduction.list = list("mca.rna", "mca.adt"), 
+  dims.list = list(1:44, 1:14), modality.weight.name = c("MCA.RNA.weight", "MCA.ADT.weight"))
+DimPlot(merged.bc.cellid, reduction = "mca.rna", group.by = "annotation")  + ggtitle("MCA_RNA") + theme(legend.text = element_text(size =10), aspect.ratio = 1) | DimPlot(merged.bc.cellid, reduction = "mca.adt", group.by = "annotation")  + ggtitle("MCA_ADT") + theme(legend.text = element_text(size =10), aspect.ratio = 1) 
+
+
+merged.bc.cellid <- RunUMAP(merged.bc.cellid, nn.name = "weighted.nn", reduction.name = "wnn.umap", reduction.key = "wnnUMAP_", seed.use = 1234)
+
+DimPlot(merged.bc.cellid, reduction = "mca.rna", group.by = "annotation")  + ggtitle("MCA_RNA") + theme(legend.text = element_text(size =10), aspect.ratio = 1) | DimPlot(merged.bc.cellid, reduction = "mca.adt", group.by = "annotation")  + ggtitle("MCA_ADT") + theme(legend.text = element_text(size =10), aspect.ratio = 1) | DimPlot(merged.bc.cellid, reduction = "wnn.umap", group.by = "annotation")  + ggtitle("MCA_WNN") + theme(legend.text = element_text(size =10), aspect.ratio = 1)
+```
+
+#Obtaining immune cell-type gene signatures
+```{r}
+panglao <- read_tsv("https://panglaodb.se/markers/PanglaoDB_markers_27_Mar_2020.tsv.gz")
+#the analysis to immune specific gene signatues
+panglao_immune <- panglao %>% filter(organ == "Immune system")
+
+# restricting to mouse specific genes
+panglao_immune <- panglao_immune %>%  filter(str_detect(species,"Mm"))
+
+# converting dataframes into a list of vectors, which is the format needed as input for CelliD
+panglao_immune <- panglao_immune %>%  
+  group_by(`cell type`) %>%  
+  summarise(geneset = list(`official gene symbol`))
+immune_gs <- setNames(panglao_immune$geneset, panglao_immune$`cell type`)
+
+#remove very short signatures
+immune_gs <- immune_gs[sapply(immune_gs, length) >= 10]
+
+
+#Convert human genes to mouse genes : 
+convertHumanGeneList <- function(x){
+
+require("biomaRt")
+
+human = useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl", version = 105)
+
+mouse = useEnsembl(biomart = "genes", dataset = "mmusculus_gene_ensembl", version = 105)
+
+genesV2 = getLDS(attributes = c("hgnc_symbol"), filters = "hgnc_symbol", values = x , mart = human, attributesL = c("mgi_symbol"), martL = mouse, uniqueRows=T)
+
+humanx <- unique(genesV2[, 2])
+
+# Print the first 6 genes found to the screen
+
+print(head(humanx))
+
+return(humanx)
+
+}
+
+
+#immune_gs$`T regulatory cells`<- convertHumanGeneList(immune_gs$`T regulatory cells`)
+immune_gs
+
+scigenex.gs <- miceWT_scigenex20.3@gene_clusters
+```
+
+#Assessing per-cell gene signature enrichments against pre-established marker lists (panglaoDB)
+```{r}
+# Performing per-cell hypergeometric tests against the gene signature collection
+HGT_immune_gs <- RunCellHGT(merged.bc.cellid, reduction = "mca.rna", pathways = immune_gs, n.features = 200, dims = 1:44, minSize = 10)
+```
+
+```{r}
+# For each cell, assess the signature with the lowest corrected p-value (max -log10 corrected p-value)
+Panglao_gs_prediction <- rownames(HGT_immune_gs)[apply(HGT_immune_gs, 2, which.max)]
+
+# For each cell, evaluate if the lowest p-value is significant
+Panglao_gs_prediction_signif <- ifelse(apply(HGT_immune_gs, 2, max)>2, yes = Panglao_gs_prediction, "unassigned")
+
+# Save cell type predictions as metadata within the Seurat object
+merged.bc.cellid$Panglao_prediction <- Panglao_gs_prediction_signif
+
+ggplotly(DimPlot(merged.bc.cellid, reduction ="wnn.umap", group.by = "Panglao_prediction"))
+ggplotly(DimPlot(merged.bc.cellid, reduction = "wnn.umap", group.by = "sig.annotation"))
+```
+
+
+#Assessing per-cell gene signature enrichments against pre-established marker lists (ScigeneX)
+```{r}
+# Performing per-cell hypergeometric tests against the gene signature collection
+HGT_bc_gs <- RunCellHGT(merged.bc.cellid, reduction = "mca.rna", pathways = scigenex.gs, n.features = 200, dims = 1:44, minSize = 5)
+```
+
+```{r}
+# For each cell, assess the signature with the lowest corrected p-value (max -log10 corrected p-value)
+Tcell_gs_prediction <- rownames(HGT_bc_gs)[apply(HGT_bc_gs, 2, which.max)]
+
+# For each cell, evaluate if the lowest p-value is significant
+Tcell_gs_prediction_signif <- ifelse(apply(HGT_bc_gs, 2, max)>2, yes = Tcell_gs_prediction, "unassigned")
+
+# Save cell type predictions as metadata within the Seurat object
+merged.bc.cellid$Cellid_prediction <- Tcell_gs_prediction_signif 
+
+save(merged.bc.cellid, file ="/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/CellID_merged.Robj")
+```
+
+Cette approche ne me permet pas de distribuer des cellules en dévélopment dans le thymus. 

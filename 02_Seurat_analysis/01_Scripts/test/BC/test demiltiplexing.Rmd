@@ -1,0 +1,221 @@
+---
+title: "test demultiplexing"
+author: "Chau"
+date: "2024-04-05"
+output: html_document
+---
+#Loading lib
+```{r, message=FALSE}
+library(Seurat)
+library(ggplot2)
+library(plotly)
+library(ggrepel)
+library(gridExtra)
+
+#loading script
+source("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/CHAU/Functions/Mito-ribo_visualisation.R")
+```
+
+
+
+```{r, message=FALSE}
+# Load path for files
+PATH_OLD_DATA <- "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/02_Preprocessing/CellRanger/20210304/PTEN_TCR_06_mm10/outs/filtered_feature_bc_matrix"
+PATH_OLD_TAG_DATA <-"/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/02_Preprocessing/Citeseqcount/20210304/20210322/Citeseqcount/umi_count"
+PATH_210322_FILTERED <- "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/02_Preprocessing/cellranger702/210322/210322/outs/per_sample_outs/210322/count/sample_filtered_feature_B6_matrix"
+PATH_210322_NOT_FILTERED <- "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/02_Preprocessing/cellranger702/210322/210322/outs/multi/count/raw_feature_B6_matrix"
+SAMPLE <- "210322"
+PROJECT_NAME <- paste("10X_", SAMPLE, sep = "")
+```
+
+
+```{r, message=FALSE}
+# Create Seurat object and apply filter  
+# Read 10X data
+B6_210322_not_filtered <- Read10X(data.dir = PATH_210322_NOT_FILTERED, strip.suffix = TRUE) 
+B6_210322_filtered <- Read10X(data.dir = PATH_210322_FILTERED, strip.suffix = TRUE)
+B6_210322_old <- Read10X(data.dir = PATH_OLD_DATA, strip.suffix = TRUE)
+B6_210322_old_tag <- Read10X(PATH_OLD_TAG_DATA, gene.column = 1,strip.suffix = TRUE)
+```
+
+
+# With cellranger v7.2 outputs non filtered : 
+```{r, message=FALSE}
+# Create the Seurat object
+not_filtered_Seurat <- CreateSeuratObject(counts = B6_210322_not_filtered$`Gene Expression`, min.cells = 3, min.features = 200, project = "210322") 
+# Normalize RNA data with log normalization
+not_filtered_Seurat <- NormalizeData(not_filtered_Seurat,display.progress = FALSE)
+# Find and scale variable genes
+not_filtered_Seurat <- FindVariableFeatures(not_filtered_Seurat, do.plot = F, selection.method = "vst", nfeatures = 2000, display.progress = FALSE)
+not_filtered_Seurat <- ScaleData(not_filtered_Seurat,verbose = FALSE)  #use variable features by default
+
+hto_not_filtered <- CreateAssayObject(counts = B6_210322_not_filtered$`Antibody Capture`[,rownames(not_filtered_Seurat@meta.data)])
+hto_not_filtered <- LayerData(object = hto_not_filtered, layer = "counts")
+print(rownames(hto_not_filtered))
+HTO_not_filtered <- hto_not_filtered[c(1:7),]
+print(rownames(hto_not_filtered))
+adt_not_filtered <- hto_not_filtered[c(8:20),]
+
+hto_NAME <- c("Thymus-497","Thymus-500","Thymus-498","Spleen-497+499","Spleen-498","Thymus-499","Spleen-500")
+rownames(HTO_not_filtered) <- hto_NAME
+
+# Add hto.210322 data as a new assay independent from RNA
+not_filtered_Seurat[["HTO"]] <- CreateAssayObject(counts = HTO_not_filtered)
+not_filtered_Seurat <- SetAssayData(not_filtered_Seurat,assay = "HTO",layer = "counts",new.data = HTO_not_filtered)
+# Normalize hto.210322 data, here we use centered log-ratio (CLR) transformation
+not_filtered_Seurat <- NormalizeData(not_filtered_Seurat, assay = "HTO",normalization.method = "CLR",verbose = FALSE)
+not_filtered_Seurat <- ScaleData(not_filtered_Seurat, assay = "HTO", verbose = FALSE)
+```
+
+# With cellranger v7.2 outputs filtered : 
+```{r, message=FALSE}
+# Create the Seurat object
+filtered_Seurat <- CreateSeuratObject(counts = B6_210322_filtered$`Gene Expression`, min.cells = 3, min.features = 200, project = "210322") 
+# Normalize RNA data with log normalization
+filtered_Seurat <- NormalizeData(filtered_Seurat,display.progress = FALSE)
+# Find and scale variable genes
+filtered_Seurat <- FindVariableFeatures(filtered_Seurat, do.plot = F, selection.method = "vst", nfeatures = 2000, display.progress = FALSE)
+filtered_Seurat <- ScaleData(filtered_Seurat,verbose = FALSE)  #use variable features by default
+
+hto_filtered <- CreateAssayObject(counts = B6_210322_filtered$`Antibody Capture`[,rownames(filtered_Seurat@meta.data)])
+hto_filtered <- LayerData(object = hto_filtered, layer = "counts")
+print(rownames(hto_filtered))
+
+HTO_filtered <- hto_filtered[c(1:7),]
+print(rownames(HTO_filtered))
+adt_filtered <- hto_filtered[c(8:20),]
+print(rownames(adt_filtered))
+hto_NAME <- c("Thymus-497","Thymus-500","Thymus-498","Spleen-497+499","Spleen-498","Thymus-499","Spleen-500")
+rownames(HTO_filtered) <- hto_NAME
+# Add hto.210322 data as a new assay independent from RNA
+filtered_Seurat[["HTO"]] <- CreateAssayObject(counts = HTO_filtered)
+filtered_Seurat <- SetAssayData(filtered_Seurat,assay = "HTO",layer = "counts",new.data = HTO_filtered)
+# Normalize hto.210322 data, here we use centered log-ratio (CLR) transformation
+filtered_Seurat <- NormalizeData(filtered_Seurat, assay = "HTO",normalization.method = "CLR",verbose = FALSE)
+filtered_Seurat <- ScaleData(filtered_Seurat, assay = "HTO", verbose = FALSE)
+```
+
+
+# WitH CITE-seq-count outputs
+```{r}
+data_old<- CreateSeuratObject(counts = B6_210322_old, min.cells = 3, min.features = 200, project = SAMPLE)
+#Separate HTO and ADT librairies
+hto_old <- B6_210322_old_tag[c(1:7),]
+print(rownames(hto_old))
+adt_old <- B6_210322_old_tag[c(8:22),]
+print(rownames(adt_old))
+#Rename HTO and ADT to be easily readable 
+rownames(hto_old) <- c("Thymus-497","Thymus-498","Thymus-499","Thymus-500","Spleen-497-499","Spleen-498","Spleen-500")
+rownames(adt_old) <- c("CD3","CD4","CD8","CD25","CD62L","CD44","CD69","CCR7","CD5","CD24","TCRgd","TCR-B","TCR-VB5","TCR-VA2","CD71")
+#Tag loading
+umi_sparse_old <- GetAssayData(object = data_old, layer = "counts")
+joint_bcs <- intersect(colnames(umi_sparse_old),colnames(hto_old))
+length(joint_bcs)
+# Subset RNA and HTO counts by joint cell barcodesumi_sparse <- pbmc_umi_sparse[,joint_bcs]
+HTO_old <- as.matrix(hto_old[,joint_bcs])
+# Setup Seurat object
+old_Seurat <- CreateSeuratObject(counts = umi_sparse_old[,joint_bcs], assay = "RNA", project = SAMPLE)
+
+# Normalize RNA data with log normalization
+old_Seurat <- NormalizeData(old_Seurat,display.progress = FALSE)
+# Find and scale variable genes
+old_Seurat <- FindVariableFeatures(old_Seurat, do.plot = F, selection.method = "vst", nfeatures = 2000, display.progress = FALSE)
+old_Seurat <- ScaleData(old_Seurat,verbose = FALSE)  #use variable features by default
+# Add HTO data as a new assay independent from RNA
+old_Seurat[["HTO"]] <- CreateAssayObject(counts = HTO_old)
+old_Seurat <- SetAssayData(old_Seurat,assay = "HTO",layer = "counts",new.data = HTO_old)
+# Normalize HTO data, here we use centered log-ratio (CLR) transformation
+old_Seurat <- NormalizeData(old_Seurat, assay = "HTO",normalization.method = "CLR",verbose = FALSE)
+```
+
+### Demultiplexing
+```{r, message=FALSE, include=FALSE}
+# #Demultiplex cells based on hto.210322 enrichment
+#Here we use the Seurat function MULTIseqDemux() to assign single cells back to their sample origins.
+not_filtered_Seurat <- MULTIseqDemux(not_filtered_Seurat, assay = "HTO",autoThresh = TRUE, maxiter = 10,qrange = seq(from = 0.1, to = 0.9, by = 0.05), verbose = TRUE)
+filtered_Seurat <- MULTIseqDemux(filtered_Seurat, assay = "HTO",autoThresh = TRUE, maxiter = 10,qrange = seq(from = 0.1, to = 0.9, by = 0.05), verbose = TRUE)
+old_Seurat<- MULTIseqDemux(old_Seurat, assay = "HTO",autoThresh = TRUE, maxiter = 10,qrange = seq(from = 0.1, to = 0.9, by = 0.05), verbose = TRUE)
+table(not_filtered_Seurat$MULTI_ID)
+table(filtered_Seurat$MULTI_ID)
+table(old_Seurat$MULTI_ID)
+```
+
+```{r}
+#Run HTOdemux just to get the HTOmax_ID fied
+not_filtered_Seurat <- HTODemux(not_filtered_Seurat, assay = "HTO", positive.quantile = 0.99, verbose = FALSE)
+filtered_Seurat <- HTODemux(filtered_Seurat, assay = "HTO", positive.quantile = 0.99, verbose = FALSE)
+old_Seurat <- HTODemux(old_Seurat, assay = "HTO", positive.quantile = 0.99, verbose = FALSE)
+
+table(not_filtered_Seurat$hash.ID)
+table(filtered_Seurat$hash.ID)
+table(old_Seurat$hash.ID)
+```
+```{r}
+table(filtered_Seurat@meta.data$MULTI_ID,old_Seurat@meta.data$MULTI_ID)
+```
+
+# HTO matrix comptage 
+```{r}
+mtxHTO_not_filtered <-  as.data.frame(HTO_not_filtered) #df1
+dim(mtxHTO_not_filtered)
+mtxHTO_filtered <- as.data.frame(HTO_filtered)#df2
+dim(mtxHTO_filtered)
+dim(HTO_old)#df3
+```
+
+```{r}
+# Calcul des comptages totaux pour chaque ID dans chaque dataframe
+total_counts_df1 <- rowSums(mtxHTO_not_filtered)
+total_counts_df2 <- rowSums(mtxHTO_filtered)
+total_counts_df3 <- rowSums(HTO_old)
+# Création d'un dataframe à partir des comptages totaux
+total_counts_df <- data.frame(ID = rownames(mtxHTO_not_filtered), 
+                              Total_DF1 = total_counts_df1,
+                              Total_DF2 = total_counts_df2,
+                              Total_DF3 = total_counts_df3)
+
+
+```
+
+```{r}
+# Avec patchwork, par exemple
+plot1 <- ggplot(total_counts_df, aes(x = Total_DF1, y = Total_DF2)) + geom_point() + labs(title = "Not filtered vs Filtered", x ="Not filtered counts", y = "Filtered counts")
+plot2 <- ggplot(total_counts_df, aes(x = Total_DF2, y = Total_DF3)) + geom_point() + labs(title = "Filtered vs Old data", x ="Filtered counts", y = "Cite-seq counts")
+
+library(patchwork)
+(plot1 | plot2) 
+
+```
+
+
+
+```{r, message=FALSE}
+
+DefaultAssay(not_filtered_Seurat) <- "HTO"
+DefaultAssay(filtered_Seurat) <- "HTO"
+DefaultAssay(old_Seurat) <- "HTO"
+
+not_filtered_Seurat <- ScaleData(not_filtered_Seurat, features = rownames(not_filtered_Seurat), verbose = FALSE)
+#not_filtered_Seurat <- RunPCA(not_filtered_Seurat, features = rownames(not_filtered_Seurat), npcs = 8, approx = FALSE)
+not_filtered.dist.mtx <- as.matrix(dist(t(GetAssayData(object = not_filtered_Seurat, assay = "HTO"))))
+not_filtered_Seurat <- RunTSNE(not_filtered_Seurat, distance.matrix = not_filtered.dist.mtx, perplexity = 100)
+
+filtered_Seurat <- ScaleData(filtered_Seurat, features = rownames(filtered_Seurat), verbose = FALSE)
+#filtered_Seurat <- RunPCA(filtered_Seurat, features = rownames(filtered_Seurat), npcs = 8, approx = FALSE)
+not_filtered.dist.mtx <- as.matrix(dist(t(GetAssayData(object = filtered_Seurat, assay = "HTO"))))
+filtered_Seurat <- RunTSNE(filtered_Seurat, distance.matrix = not_filtered.dist.mtx, perplexity = 100)
+
+old_Seurat <- ScaleData(old_Seurat, features = rownames(old_Seurat), verbose = FALSE)
+#old_Seurat <- RunPCA(old_Seurat, features = rownames(old_Seurat), npcs = 8, approx = FALSE)
+not_filtered.dist.mtx <- as.matrix(dist(t(GetAssayData(object = old_Seurat, assay = "HTO"))))
+old_Seurat <- RunTSNE(old_Seurat, distance.matrix = not_filtered.dist.mtx, perplexity = 100)
+```
+
+```{r, message=FALSE}
+DimPlot(not_filtered_Seurat, group.by ="MULTI_ID",reduction = "tsne")
+DimPlot(filtered_Seurat, group.by ="MULTI_ID",reduction = "tsne")
+DimPlot(old_Seurat, group.by ="MULTI_ID",reduction = "tsne")
+```
+
+
+

@@ -1,0 +1,1161 @@
+---
+title: "BalbC scRNA-seq analysis"
+output: html_document
+date: "2024-03-13"
+editor_options: 
+  chunk_output_type: console
+---
+
+#Loading libraries
+
+```{r, include= FALSE, message=FALSE, error=FALSE, warning=FALSE}
+library(Seurat)
+library(ggplot2)
+library(plotly)
+library(cowplot)
+library(dplyr)
+library(tidyr)
+library(ggrepel)
+library(stringr)
+library(DT)
+library(paletteer)
+library(viridisLite)
+library(viridis)
+library(scigenex)
+scigenex::set_verbosity(0)
+library(tibble)
+library(circlize)
+library(tidyverse)
+library(AUCell)
+library(clusterProfiler)
+install.packages("msigdbr")
+library(msigdbr)
+library(fgsea)
+library(enrichplot)
+library(gridExtra)
+library(patchwork)
+library(data.table)
+library(ggthemes)
+library(ggalluvial)
+library(org.Mm.eg.db)
+library(circlize)
+library(fmsb)
+library(VennDiagram)
+if (!requireNamespace("fmsb", quietly = TRUE)) {
+  install.packages("fmsb")
+}
+#BiocManager::install("org.Mm.eg.db")
+
+if (!requireNamespace("VennDiagram", quietly = TRUE)) {
+    install.packages("VennDiagram")
+}
+
+
+
+```
+
+# Loading merged seurat object
+
+```{r, include=FALSE}
+load(file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/merge_2023exp_reg_cc.Robj")
+```
+# Set up
+```{r, include=FALSE}
+#Set background for clusterProfiler
+background <- bc.combined.cc@assays$RNA@features
+backgroundrow <- rownames(background)
+# Set the random number seed
+set.seed(1234)
+source("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/fonctions_R/DEG_Visualization.R")
+# Gene's annotation file 
+gene_annotation <- read.csv("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/CHAU/annotation.csv", head = T, sep = '\t')
+unique_gene_annotation <- unique(gene_annotation[, c("Symbol", "Name")])
+#Color palettes for idents:
+multi_id.palette <- c("#D9F0A3FF", "#41AB5DFF","#82C45FFF", "#004529FF",
+                      "#BAB97DFF","#CBC106FF",
+                      "#F5D000FF","#EF7C12FF","#FFB274FF","#FF8827FF","#FFCC66","#FFAD66FF","#F38630FF","#FA6900FF","#FF7F0E","#CC5800FF",
+                      "#E88471FF","#CF597EFF","#FF7856FF","#D8152FFF" ,"#FF7080FF","#A50021FF")
+names(multi_id.palette) <- c("Thymus-51","Spleen-51","Thymus-83","Spleen-83","Thymus-47","Spleen-47","Thymus-85","Spleen-85","Thymus-84","Spleen-84","Thymus-39","Spleen-39","Thymus-52","Spleen-52","Thymus-70","Spleen-70","Thymus-80","Spleen-80","Thymus-53","Spleen-53","Thymus-69","Spleen-69")
+
+#Palettes for "annotation"
+annotation.palette1 <- rev(paletteer::paletteer_d("futurevisions::cancri"))
+annotation.palette2 <- rev(paletteer::paletteer_d("ggprism::viridis"))
+names(annotation.palette2) <- c("Thymus-WT","Thymus-PreTum early","Thymus-PreTum late","Thymus-Tum")
+names(annotation.palette1) <- c("Spleen-WT","Spleen-PreTum early","Spleen-PreTum late","Spleen-Tum")
+
+#Palettes for "sig.annotation"
+palette1 <- c("#BAB97DFF","#F7FCB9FF", "#D9F0A3FF", "#ADDD8EFF","#82C45FFF","#78C679FF", "#CBC106FF", "#238443FF", "#41AB5DFF", "#006837FF", "#004529FF")
+names(palette1) <- c("DN","DPblast","DPsm","DPsmCD25+","DPsmCCR7+","DP69","DP to SP","SP8","SP8CD69+","SP4","SP4CD69+")
+palette2 <- as.character(rev(paletteer::paletteer_d("ggsci::red_material", n = 3)))
+names(palette2) <- c("DPblast Myc+","DPsm Myc+","DP69 Myc+")
+palette3 <- c("#65323EFF","#75D8D5FF", "#09979BFF", "#009474FF")
+names(palette3) <- c("NK","Tgd early","Tgd mature","MAIT")
+palette4 <- c("#C71000","#B31166")
+names(palette4) <- c("Undefined Myc+","Dying cells")
+
+OTIIpalette <- c("#7AD151FF","#414487FF","#FDE725FF","#DE4968FF","#808080FF")
+names(OTIIpalette) <- c("OTII","OTII - incomplete","OTII - multichains","non OTII","unknown")
+
+bc.combined.cc$miceID <- factor(bc.combined.cc$miceID, levels=c("51","83","47","85","84","39","52","70","80","53","69"))
+bc.combined.cc$MULTI_ID
+bc.combined.cc$annotation <- factor(bc.combined.cc$annotation, levels=c("Thymus-WT","Thymus-PreTum early","Thymus-PreTum late","Thymus-Tum","Spleen-WT","Spleen-PreTum early","Spleen-PreTum late","Spleen-Tum"))
+bc.combined.cc$sig.annotation <- factor(bc.combined.cc$sig.annotation, levels = c("DN","DPblast","DPblast Myc+","DPsm","DPsm Myc+","DPsmCD25+","DPsmCCR7+","DP69","DP69 Myc+","Dying cells","DP to SP","SP8","SP8CD69+","SP4","SP4CD69+","NK","Tgd early","Tgd mature","MAIT","Undefined Myc+"))
+```
+
+
+This analysis was carried out on the 3 experiments: 230303, 230320, 230327. In these experiments, we used OT-II Ptendel BALB/c mice, corresponding to OT-II Ptendel C57BL/6J(B6) mice crossed with BALB/c mice. Based on the clinical status of mice and FACS analysis we categorized the T cell leukemic development into three major stages: pre-leukemic 'early', pre-leukemic 'late' and leukemic. Then, we performed a CITE-seq assays on the thymus and spleen of 3 control OT-II BALB/c mice and 9 OT-II Ptendel BALB/c mice (1 mouse from 'pre-leukemic'early ; 5 mice from pre-leukemic 'late' and 3 mice from leukemic stages).
+
+```{r,fig.width=10, fig.height=4, warning=TRUE}
+p1 <- VlnPlot(bc.combined.cc,features = "nFeature_RNA", group.by = "orig.ident", pt.size = 0.1) 
+p2 <- VlnPlot(bc.combined.cc,features = "percent.ribo", group.by = "orig.ident", pt.size = 0.1) 
+p3 <- VlnPlot(bc.combined.cc,features = "percent.mt", group.by = "orig.ident", pt.size = 0.1) 
+plot_grid(p1, p2, p3, ncol = 3)
+```
+These experiments have similar profils. We can merged its for further analysis
+# Results of data demultiplexing
+```{r fig.width=8, fig.height=6, warning=TRUE}
+DimPlot(bc.combined.cc, group.by = "MULTI_ID", reduction = "wnn.umap", pt.size = 0.2, label = TRUE, repel = TRUE, label.size = 2.5, cols = multi_id.palette)
+```
+
+```{r fig.width=16, fig.height=12, warning=TRUE, message=FALSE}
+#Idents(bc.combined.cc) <- "MULTI_ID"
+#Adding miceID column into metadata:
+# id <- c("69", "70", "83", "52", "84", "80", "85", "53", "51", "39", "47")
+# for (i in id) {
+#   # Find cells in Thymus-i or Spleen-i
+#   cells_to_annotate <- WhichCells(bc.combined.cc, idents = c(paste0("Thymus-", i), paste0("Spleen-", i)))
+#   # Adding miceID for these cells
+#   bc.combined.cc@meta.data[cells_to_annotate, "miceID"] <- i
+# }
+
+DimPlot(bc.combined.cc, group.by = "MULTI_ID",split.by="miceID",order = rev(c("51","83","47","85","84","39","52","70","80","53","69")) , reduction = "wnn.umap", pt.size = 0.5, label = TRUE, repel = TRUE, label.size = 2.5, ncol = 4, cols = multi_id.palette)
+
+#Changer couleur pour thymus vs spleen
+```
+```{r}
+DimPlot(bc.combined.cc, group.by = "MULTI_ID",split.by="annotation", reduction = "wnn.umap", pt.size = 0.5, label = TRUE, repel = TRUE, label.size = 2.5, ncol = 4, cols = multi_id.palette)
+```
+
+We observed several clusters in Thymus of each mice
+```{r fig.width=16, fig.height=12, warning=TRUE, message=FALSE}
+DimPlot(bc.combined.cc, group.by = "wsnn_res.2",split.by="miceID", reduction = "wnn.umap", pt.size = 0.5, label = TRUE, repel = TRUE, label.size = 2.5, ncol = 4)
+```
+
+
+# Leukemia stages
+```{r fig.width=10, fig.height=8, warning=TRUE}
+DimPlot(bc.combined.cc, group.by = "annotation", reduction = "wnn.umap",cols = c(annotation.palette1,annotation.palette2), pt.size = 0.3, label = TRUE, repel = T, label.size = 4, label.color = "#0D0C0BFF")
+```
+
+
+```{r, fig.width=15, fig.height=8, warning=FALSE, message=FALSE}
+
+DimPlot(bc.combined.cc, group.by = "MULTI_ID", split.by = "annotation", reduction = "wnn.umap", pt.size = 0.2, label = TRUE, repel = T, label.size = 4, ncol=4, label.color = "#0D0C0BFF", cols = multi_id.palette)
+```
+
+```{r, fig.width=15, fig.height=8, warning=FALSE, message=FALSE}
+Idents(bc.combined.cc)<-"sig.annotation"
+DimPlot(bc.combined.cc, group.by = "sig.annotation", split.by = "annotation", reduction = "wnn.umap", pt.size = 0.2, label = FALSE, repel = T, label.size = 4, ncol=4, label.color = "#0D0C0BFF", cols = c(palette1,palette2,palette3,palette4))
+```
+
+
+<details>
+  <summary>**Thymus 52**</summary>
+  Thymus 52 contain 3 main clusters : 15, 33, 13. These cluster split into 2 components 13 vs (33,15)
+```{r, message=FALSE,warning =FALSE, fig.width = 7, fig.height = 8}
+cluster33vs15 <- read.csv("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/DEG_cluster33vs15.csv", h= T, sep = ",")
+cluster33vs15 <- cluster33vs15 %>%
+  filter(p_val_adj <= 0.05 & (abs(pct.1-pct.2)>0.15)) %>%
+  dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name, abs)
+PlotDEG(df.deg = cluster33vs15,threshold.abs.log2FC = 2.5, pct1 = 0.3,pct2 = 0.3,y.lim = c(-10,10),label.1 = "Clusters 33", label.2 = "Cluster 15", mid.p = 30)
+``` 
+  
+```{r,fig.width=14, fig.height=8, warning=FALSE, message=FALSE}
+Plot.enriched.terms(cluster33vs15,pct1 = 0.3,pct2 = 0.3,n.genes =-350, background.genes = backgroundrow, onto = "BP", do.treeplot = TRUE, do.cnet = T, do.emapplot = T)# 200 up-regulated genes
+```
+
+Cluster 15 seem to be SP4 PTENdel, but this cluster don't express Myc. I try to compare with SP4 physio (ex : Cluster 5)
+```{r}
+cluster15vs5 <- read.csv("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/DEG_cluster15vs5.csv", h= T, sep = ",")
+cluster15vs5 <- cluster15vs5 %>%
+  filter(p_val_adj <= 0.05 & (abs(pct.1-pct.2)>0.15)) %>%
+  dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name, abs)
+```
+
+```{r, fig.width=15, fig.height=12, message =FALSE, warning=FALSE}
+
+FeaturePlot(bc.combined.cc, features = c("Prex2","Bex1","Bex4","Me3","Dlx5","Tceal8","Dppa2", "Myl10","Tmem176b","Apex1","Dppa2","Gata3","Ccr9"),order = T, reduction = "wnn.umap", pt.size = 0.2, ncol = 4 ) & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+```
+
+Slamf1-negative multipotent progenitor cell(bone marrow)https://pubmed.ncbi.nlm.nih.gov/30283141/ ???
+
+```{r,}
+# cluster15.33vs13 <- FindMarkers(bc.combined.cc, ident.1 = c(Cluster15,Cluster33), ident.2 = Cluster13 )
+# cluster15.33vs13$gene <- rownames(cluster15.33vs13)
+# #Adding annotation to DE genes
+# cluster15.33vs13 <- cluster15.33vs13 %>%
+#   left_join(y = unique_gene_annotation, by = c("gene" = "Symbol"))
+# #add abs value to table
+# cluster15.33vs13$abs <- abs(cluster15.33vs13$avg_log2FC)
+# write.csv(cluster15.33vs13, "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/DEG_cluster15.33vs13.csv", row.names=FALSE)
+cluster15.33vs13 <- read.csv("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/DEG_cluster15.33vs13.csv", h= T, sep = ",")
+cluster15.33vs13 <- cluster15.33vs13 %>%
+  filter(p_val_adj <= 0.05& (abs(pct.1-pct.2)>0.15)) %>%
+  dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name, abs)
+
+```
+
+```{r, fig.width=15, fig.height=12, message =FALSE}
+FeaturePlot(bc.combined.cc, features = c("Itpkb","Satb1","Cdk6", "Themis", "Ctsl","Myb", "Bcl11b","Lef1","Cdk6","Runx1","Arid1b"),order = T, reduction = "wnn.umap", pt.size = 0.2, ncol = 4 ) & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+```
+
+
+```{r, message=FALSE,warning =FALSE, fig.width = 7, fig.height = 8}
+cluster15.33vs13 <- read.csv("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/DEG_cluster15.33vs13.csv", h= T, sep = ",")
+PlotDEG(df.deg = cluster15.33vs13,threshold.abs.log2FC = 5, pct1 = 0.3,pct2 = 0.3,y.lim = c(-10,10),label.1 = "Clusters 15 and 33", label.2 = "Cluster 13", mid.p = 30)
+```
+
+```{r,fig.width=14, fig.height=8, warning=FALSE, message=FALSE}
+Plot.enriched.terms(cluster15.33vs13,pct1 = 0.3,pct2 = 0.3,n.genes = 200, background.genes = backgroundrow, do.treeplot = TRUE, do.cnet = T, do.emapplot = T)# 200 up-regulated genes
+```
+
+
+```{r, message=FALSE, warning=FALSE, fig.width=15, fig.height=8 }
+FeaturePlot(bc.combined.cc, features = c("Gata3","Foxp1","Anxa1", "Jak3","Itpr1"),order = T, reduction = "wnn.umap", pt.size = 0.2, ncol = 4 ) & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+```
+</details>
+
+<details>
+  <summary>**Thymus 70**</summary> 
+   Thymus 70 contain 4 main clusters : 11,20,7,40. These cluster split into 2 components 11 vs (20,7,40), but cluster 20 seems to contain dying cells
+```{r,fig.width = 7, fig.height = 8, warning = FALSE}
+Cluster11 <- bc.combined.cc@meta.data %>%
+  filter(MULTI_ID=="Thymus-70" & wsnn_res.2=="11") %>%
+  rownames()
+Cluster7 <- bc.combined.cc@meta.data %>%
+  filter(MULTI_ID=="Thymus-70" & wsnn_res.2=="7") %>%
+  rownames()
+Cluster40 <- bc.combined.cc@meta.data %>%
+  filter(MULTI_ID=="Thymus-70" & wsnn_res.2=="40") %>%
+  rownames()
+Cluster20 <- bc.combined.cc@meta.data %>%
+  filter(MULTI_ID=="Thymus-70" & wsnn_res.2=="20") %>%
+  rownames()
+# cluster40vs7 <- FindMarkers(bc.combined.cc, ident.1 = Cluster40, ident.2 = Cluster7)
+# cluster7vs11 <- FindMarkers(bc.combined.cc, ident.1 = Cluster7, ident.2 = Cluster11)
+# cluster20vs7 <-FindMarkers(bc.combined.cc, ident.1 = Cluster20, ident.2 = Cluster7)
+# cluster20vs40<- FindMarkers(bc.combined.cc, ident.1 = Cluster20, ident.2 = Cluster40)
+# # cluster40vs7$gene <- rownames(cluster40vs7)
+# # cluster7vs11$gene <- rownames(cluster7vs11)
+# cluster20vs7$gene <- rownames(cluster20vs7)
+# cluster20vs40$gene <- rownames(cluster20vs40)
+##Adding annotation to DE genes
+# # 
+# cluster20vs7 <- cluster20vs7 %>%
+#    left_join(y = unique_gene_annotation, by = c("gene" = "Symbol"))
+# cluster20vs40 <- cluster20vs40 %>%
+#    left_join(y = unique_gene_annotation, by = c("gene" = "Symbol"))
+# #add abs value to table
+# cluster20vs7$abs <- abs(cluster20vs7$avg_log2FC)
+# cluster20vs40$abs <- abs(cluster20vs40$avg_log2FC)
+# write.csv(cluster20vs7, "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/DEG_cluster20vs7.csv", row.names=FALSE)
+# write.csv(cluster20vs40, "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/DEG_cluster20vs40.csv", row.names=FALSE)
+cluster40vs7 <- read.csv("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/DEG_cluster40vs7.csv", h= T, sep = ",")
+cluster7vs11 <- read.csv("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/DEG_cluster7vs11.csv", h= T, sep = ",")
+cluster20vs7 <- read.csv("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/DEG_cluster20vs7.csv", h= T, sep = ",")
+cluster20vs40 <- read.csv("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/DEG_cluster20vs40.csv", h= T, sep = ",")
+cluster40vs7 <- cluster40vs7 %>%
+  filter(p_val_adj <= 0.05) %>%
+  dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name, abs)
+cluster7vs11 <- cluster7vs11 %>%
+  filter(p_val_adj <= 0.05& (abs(pct.1-pct.2)>0.15)) %>%
+  dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name, abs)
+cluster20vs7 <- cluster20vs7 %>%
+  filter(p_val_adj <= 0.05) %>%
+  dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name, abs)
+cluster20vs40 <- cluster20vs40 %>%
+  filter(p_val_adj <= 0.05) %>%
+  dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name, abs)
+PlotDEG(df.deg = cluster40vs7,threshold.abs.log2FC = 0.4,pct1 = 0.1,pct2 = 0.1,y.lim = c(-5,10),label.1 = "Cluster 40", label.2 = "Cluster 7", mid.p = 3)
+PlotDEG(df.deg = cluster7vs11,threshold.abs.log2FC = 2.5,pct1 = 0.3,pct2 = 0.3,y.lim = c(-10,10),label.1 = "Cluster 7", label.2 = "Cluster 11", mid.p = 60)
+```
+
+Cluster 20 contains dying cells 
+```{r}
+Idents(bc.combined.cc)<-"wsnn_res.2"
+degbc.Dyingcells <- FindMarkers(bc.combined.cc, ident.1 = "20") # This cluster contains dying cells (death by neglect ???)
+degbc.Dyingcells$gene <- rownames(degbc.Dyingcells)
+degbc.Dyingcells <- degbc.Dyingcells %>%
+    left_join(y = unique_gene_annotation, by = c("gene" = "Symbol"))
+#add abs value to table
+degbc.Dyingcells$abs <- abs(degbc.Dyingcells$avg_log2FC)
+degbc.Dyingcells <- degbc.Dyingcells %>%
+  filter(p_val_adj <= 0.05 & (pct.1 > 0.05 & pct.2>0.05)) %>%
+  dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name, abs)
+write.csv(degbc.Dyingcells, file ="/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/BC/degbc.Dyingcells.csv", row.names = FALSE)
+```
+
+
+```{r,fig.width=15, fig.height=12, message=FALSE, warning=FALSE}
+VlnPlot(bc.combined.cc, feature =c("percent.mt",'percent.ribo','auc_11',"Camk1d","mt-Atp8"), ncol= 1, group.by ='wsnn_res.2', pt.size =0) & stat_summary(fun = "median",
+                                                                            geom = "crossbar",
+                                                                             color = 'firebrick1', show.legend = F)
+FeaturePlot(bc.combined.cc, features = c("Camk1d","Arpp21","Lars2","Gphn","Il31ra","Pola1","Kcnq5"),order = T, reduction = "wnn.umap", pt.size = 0.2, ncol = 4 ) & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+```
+
+```{r}
+# DEG commons between 2 mice
+genes.pTumlate <- intersect(cluster15.33vs13$gene,cluster7vs11$gene)
+print(genes.pTumlate)
+up.pTumlate <- cluster15.33vs13 %>%filter(gene %in% genes.pTumlate) %>% arrange(desc(avg_log2FC)) %>% filter(avg_log2FC>0)%>% pull(gene)
+down.pTumlate <- cluster15.33vs13 %>%filter(gene %in% genes.pTumlate) %>% arrange(desc(avg_log2FC)) %>% filter(avg_log2FC<0)%>% pull(gene)
+ordered.up.pTumlate <- cluster15.33vs13 %>%
+  filter(gene %in% up.pTumlate) %>%
+  arrange(desc(avg_log2FC))
+ordered.down.pTumlate <- cluster15.33vs13 %>%
+  filter(gene %in% down.pTumlate) %>%
+  arrange(desc(avg_log2FC))
+
+```
+
+```{r}
+# scores <- ordered.genes.pTumlate$avg_log2FC
+# names(scores) <- cluster15.33vs13$gene
+# #Retrieve Mouse (hallmark) gene set
+# msigdbr_df <- msigdbr(species = "Mus musculus", category = "C7")
+# head(msigdbr_df)
+# # fixing format to work with fgsea
+# pathwaysH = split(x = msigdbr_df$gene_symbol, f = msigdbr_df$gs_name)
+# 
+# # run fgsea enrichment
+# fgseaRes <- fgsea(pathways=pathwaysH, scores)
+# topPathways <- fgseaRes %>%
+#   dplyr::filter(padj < 0.05) %>%   # Filtre par valeur p ajustée
+#   dplyr::top_n(10, abs(NES))       # Sélection des 10 pathways les plus significatifs
+# 
+# ggplot(topPathways, aes(x=reorder(pathway, NES), y=NES, fill=padj)) +
+#   geom_col() +
+#   coord_flip() +  # Inverser les axes pour un meilleur affichage
+#   labs(x="Pathway", y="Normalized Enrichment Score (NES)", title="Top 10 Enriched Pathways") +
+#   scale_fill_gradient2(low="blue", high="red", midpoint=0.05, name="P-adj",
+#                        limit=c(0, max(topPathways$padj))) +
+#   theme_minimal()
+```
+
+```{r,fig.width=14, fig.height=8, warning=FALSE, message=FALSE}
+Plot.enriched.terms(ordered.up.pTumlate,pct1 = 0,pct2 = 0,n.genes = 39, background.genes = backgroundrow,onto = "BP", do.treeplot = TRUE, do.cnet = T, do.emapplot = T)
+```
+
+```{r,fig.width=14, fig.height=8, warning=FALSE, message=FALSE}
+Plot.enriched.terms(ordered.down.pTumlate,pct1 = 0,pct2 = 0,n.genes = 89, background.genes = backgroundrow,onto = "BP", do.treeplot = TRUE, do.cnet = T, do.emapplot = T)
+```
+
+
+```{r, fig.width=15, fig.height=12, message =FALSE}
+FeaturePlot(bc.combined.cc, features = c("Cd8a","Colq","Gzma", "Fxyd5", "Cd52","Cd52", "Trav7-5","Cnn2","Gm525","Itm2b","Satb1","Emp3","Prkch","H3f3b","D430041D05Rik","Itpkb"),cells = rownames(bc.combined.cc@meta.data[WhichCells(bc.combined.cc, idents = c("Thymus-70","Spleen-70")),]) ,order = T, reduction = "wnn.umap", pt.size = 0.2, ncol = 4 ) & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+```
+
+</details>
+
+<details>
+  <summary>**Thymus 80 (Tum)**</summary>
+Thymus 80 contain 3 main clusters : 1,3,20. Cluster 3 of Thymus 80 unions with cluster 3 of Spleen 80
+```{r,fig.width = 7, fig.height = 8, warning = FALSE}
+Cluster1 <- bc.combined.cc@meta.data %>%
+  filter(MULTI_ID=="Thymus-80" & wsnn_res.2=="1") %>%
+  rownames()
+Cluster3 <- bc.combined.cc@meta.data %>%
+  filter(MULTI_ID==c("Thymus-80","Spleen-80") & wsnn_res.2=="3") %>%
+  rownames()
+Cluster3.T <- bc.combined.cc@meta.data %>%
+  filter(MULTI_ID==c("Thymus-80") & wsnn_res.2=="3") %>%
+  rownames()
+# 
+# cluster1vs3 <- FindMarkers(bc.combined.cc, ident.1 = Cluster1, ident.2 = Cluster3)
+# cluster1vs3$gene <- rownames(cluster1vs3)
+# 
+
+# cluster1vs3$gene <- rownames(cluster1vs3)
+# ##Adding annotation to DE genes
+# cluster1vs3 <- cluster1vs3 %>%
+#     left_join(y = unique_gene_annotation, by = c("gene" = "Symbol"))
+# 
+# #add abs value to table
+# cluster1vs3$abs <- abs(cluster1vs3$avg_log2FC)
+# 
+# write.csv(cluster1vs3, "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/DEG_cluster1vs3.csv", row.names=FALSE)
+
+
+
+cluster1vs3 <- read.csv("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/BC/DEG_cluster1vs3.csv", h= T, sep = ",")  
+cluster1vs3 <- cluster1vs3 %>%
+  filter(p_val_adj <= 0.05 & (pct.1 > 0.05 & pct.2>0.05)) %>%
+  dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name, abs)
+#PlotDEG(df.deg = cluster1vs3,threshold.abs.log2FC = 5,pct1 = 0.3,pct2 = 0.3,y.lim = c(-10,10),label.1 = "Cluster 1", label.2 = "Cluster 3", mid.p = 150)
+
+# Discard splenic cells in cluster 3
+cluster3vs1.T <- FindMarkers(bc.combined.cc, ident.1 = Cluster3.T, ident.2 = Cluster1)
+cluster3vs1.T$gene <- rownames(cluster3vs1.T)
+##Adding annotation to DE genes
+cluster3vs1.T <- cluster3vs1.T %>%
+    left_join(y = unique_gene_annotation, by = c("gene" = "Symbol"))
+
+#add abs value to table
+cluster3vs1.T$abs <- abs(cluster3vs1.T$avg_log2FC)
+cluster3vs1.T <- cluster3vs1.T %>%
+  filter(p_val_adj <= 0.05 & (pct.1 > 0.05 & pct.2>0.05)) %>%
+  dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name, abs)
+write.csv(cluster3vs1.T, "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/BC/DEG_cluster3vs1.T.csv", row.names=FALSE)
+```
+</details>
+
+
+<details>
+  <summary>**Thymus 69 (Tum)**</summary>
+
+```{r,fig.width = 7, fig.height = 8, warning = FALSE}
+Cluster9 <- bc.combined.cc@meta.data %>%
+  filter(MULTI_ID=="Thymus-69" & wsnn_res.2=="9") %>%
+  rownames()
+Cluster21 <- bc.combined.cc@meta.data %>%
+  filter(MULTI_ID==c("Thymus-69","Spleen-69") & wsnn_res.2=="21") %>%
+  rownames()
+
+cluster9vs21 <- FindMarkers(bc.combined.cc, ident.1 = Cluster9, ident.2 = Cluster21)
+cluster9vs21$gene <- rownames(cluster9vs21)
+
+##Adding annotation to DE genes
+cluster9vs21 <- cluster9vs21 %>%
+    left_join(y = unique_gene_annotation, by = c("gene" = "Symbol"))
+
+#add abs value to table
+cluster9vs21$abs <- abs(cluster9vs21$avg_log2FC)
+
+write.csv(cluster9vs21, "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/BC/DEG_cluster9vs21.csv", row.names=FALSE)
+cluster9vs21 <- read.csv("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/BC/DEG_cluster9vs21.csv", h= T, sep = ",")
+cluster9vs21 <- cluster9vs21 %>%
+  filter(p_val_adj <= 0.05 & (pct.1 > 0.05 & pct.2>0.05)) %>%
+  dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name, abs)
+#PlotDEG(df.deg = cluster9vs21,threshold.abs.log2FC = 5.5,pct1 = 0.5,pct2 = 0.5,y.lim = c(-10,10),label.1 = "Cluster 9", label.2 = "Cluster 21", mid.p = 60)
+
+# Discard splenic cells in cluster 21
+Cluster9 <- bc.combined.cc@meta.data %>%
+  filter(MULTI_ID=="Thymus-69" & wsnn_res.2=="9") %>%
+  rownames()
+Cluster21.T <- bc.combined.cc@meta.data %>%
+  filter(MULTI_ID==c("Thymus-69") & wsnn_res.2=="21") %>%
+  rownames()
+
+cluster21vs9.T <- FindMarkers(bc.combined.cc, ident.1 = Cluster21.T, ident.2 = Cluster9)
+cluster21vs9.T$gene <- rownames(cluster21vs9.T)
+
+##Adding annotation to DE genes
+cluster21vs9.T <- cluster21vs9.T %>%
+    left_join(y = unique_gene_annotation, by = c("gene" = "Symbol"))
+
+#add abs value to table
+cluster21vs9.T$abs <- abs(cluster21vs9.T$avg_log2FC)
+cluster21vs9.T <- cluster21vs9.T %>%
+  filter(p_val_adj <= 0.05 & (pct.1 > 0.05 & pct.2>0.05)) %>%
+  dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name, abs)
+write.csv(cluster21vs9.T, "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/BC/DEG_cluster21vs9.T.csv", row.names=FALSE)
+
+```
+</details>
+<details>
+  <summary>**Mouse 53 (Tum)**</summary>
+Mouse 53 contains 3 main clusters: 7, 24, 20. Cluster 7 of mouse 53 is a union of the thymus cluster and the spleen cluster.
+```{r,fig.width = 7, fig.height = 8, warning = FALSE}
+Cluster24 <- bc.combined.cc@meta.data %>%
+  filter(MULTI_ID=="Thymus-53" & wsnn_res.2=="24") %>%
+  rownames()
+Cluster7 <- bc.combined.cc@meta.data %>%
+  filter(MULTI_ID==c("Thymus-53","Spleen-53") & wsnn_res.2=="7") %>%
+  rownames()
+
+cluster24vs7 <- FindMarkers(bc.combined.cc, ident.1 = Cluster24, ident.2 = Cluster7)
+cluster24vs7$gene <- rownames(cluster24vs7)
+
+##Adding annotation to DE genes
+cluster24vs7 <- cluster24vs7 %>%
+    left_join(y = unique_gene_annotation, by = c("gene" = "Symbol"))
+
+#add abs value to table
+cluster24vs7$abs <- abs(cluster24vs7$avg_log2FC)
+write.csv(cluster24vs7, "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/BC/DEG_cluster24vs7.csv", row.names=FALSE)
+cluster24vs7 <- read.csv("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/BC/DEG_cluster24vs7.csv", h= T, sep = ",")
+cluster24vs7 <- cluster24vs7 %>%
+  filter(p_val_adj <= 0.05 & (pct.1 > 0.05 & pct.2>0.05)) %>%
+  dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name, abs)
+#PlotDEG(df.deg = cluster24vs7,threshold.abs.log2FC = 5,pct1 = 0.3,pct2 = 0.3,y.lim = c(-8,10),label.1 = "Cluster 24", label.2 = "Cluster 7", mid.p = 50)
+
+# Discard splenic cells in cluster 7
+Cluster24 <- bc.combined.cc@meta.data %>%
+  filter(MULTI_ID=="Thymus-53" & wsnn_res.2=="24") %>%
+  rownames()
+Cluster7.T <- bc.combined.cc@meta.data %>%
+  filter(MULTI_ID==c("Thymus-53") & wsnn_res.2=="7") %>%
+  rownames()
+
+cluster7vs24.T <- FindMarkers(bc.combined.cc, ident.1 = Cluster7.T, ident.2 = Cluster24)
+cluster7vs24.T$gene <- rownames(cluster7vs24.T)
+
+##Adding annotation to DE genes
+cluster7vs24.T <- cluster7vs24.T %>%
+    left_join(y = unique_gene_annotation, by = c("gene" = "Symbol"))
+
+#add abs value to table
+cluster7vs24.T$abs <- abs(cluster7vs24.T$avg_log2FC)
+cluster7vs24.T <- cluster7vs24.T %>%
+  filter(p_val_adj <= 0.05 & (pct.1 > 0.05 & pct.2>0.05)) %>%
+  dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name, abs)
+write.csv(cluster7vs24.T, "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/BC/DEG_cluster7vs24.T.csv", row.names=FALSE)
+
+```
+
+</details>
+
+```{r}
+cluster1vs3 <- read.csv("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/BC/DEG_cluster1vs3.csv", h= T, sep = ",")  
+cluster1vs3 <- cluster1vs3 %>%
+  filter(p_val_adj <= 0.05 & (pct.1 > 0.05 & pct.2>0.05)) %>%
+  dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name, abs)
+#PlotDEG(df.deg = cluster1vs3,threshold.abs.log2FC = 5,pct1 = 0.3,pct2 = 0.3,y.lim = c(-10,10),label.1 = "Cluster 1", label.2 = "Cluster 3", mid.p = 150)
+cluster9vs21 <- read.csv("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/BC/DEG_cluster9vs21.csv", h= T, sep = ",")
+cluster9vs21 <- cluster9vs21 %>%
+  filter(p_val_adj <= 0.05 & (pct.1 > 0.05 & pct.2>0.05)) %>%
+  dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name, abs)
+cluster24vs7 <- read.csv("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/BC/DEG_cluster24vs7.csv", h= T, sep = ",")
+cluster24vs7 <- cluster24vs7 %>%
+  filter(p_val_adj <= 0.05 & (pct.1 > 0.05 & pct.2>0.05)) %>%
+  dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name, abs)
+```
+
+
+# Group interactions
+```{r,fig.width=5, fig.height=5, warning=FALSE, message=FALSE}
+log2fc_cutoff1 <- 0.2
+log2fc_cutoff2 <- 0
+deg80_upreg <- cluster1vs3 %>% arrange(desc(avg_log2FC)) %>% filter(avg_log2FC <= log2fc_cutoff2)%>% pull(gene)
+deg80_downreg <- cluster1vs3 %>% arrange(desc(avg_log2FC)) %>% filter(avg_log2FC >= log2fc_cutoff1)%>% pull(gene)
+deg69_upreg <- cluster9vs21 %>% arrange(desc(avg_log2FC)) %>% filter(avg_log2FC<=log2fc_cutoff2)%>% pull(gene)
+deg69_downreg <- cluster9vs21 %>% arrange(desc(avg_log2FC))%>% filter(avg_log2FC>=log2fc_cutoff1) %>% pull(gene)
+deg53_upreg <- cluster24vs7 %>% arrange(desc(avg_log2FC)) %>% filter(avg_log2FC<=log2fc_cutoff2)%>% pull(gene)
+deg53_downreg <- cluster24vs7 %>% arrange(desc(avg_log2FC)) %>% filter(avg_log2FC>=log2fc_cutoff1)%>% pull(gene)
+# Define a list containing gene sets
+deg.up.list <- list(deg80_upreg, deg69_upreg, deg53_upreg)
+deg.down.list <- list(deg80_downreg, deg69_downreg, deg53_downreg)
+display_venn <- function(x, names,cols){
+  library(VennDiagram)
+  grid.newpage()
+  venn_object <- venn.diagram(x, filename = NULL,
+        category.names = names,
+        # Circles
+        lwd = 2,
+        lty = 'blank',
+        fill = cols ,
+        # Numbers
+        cex = .9,
+        fontface = "italic",
+        # Set names
+        cat.cex = 1,
+        cat.fontface = "bold",
+        cat.default.pos = "outer",
+        #Title
+        main.title = name)
+  grid.draw(venn_object)
+}
+display_venn(deg.down.list, names =c("DEG 80","DEG 69","DEG 53"), cols =c("#121510FF","#6D8325FF","#D6CFB7FF" ))
+display_venn(deg.up.list, name = c("DEG 80","DEG 69","DEG 53"), cols =c("#A63228FF","#C7662AFF","#EBA42BFF"))
+```
+
+```{r}
+# DEG commons between 3 mice 
+upreg.Tum <-  Reduce(intersect, list(deg80_upreg, deg69_upreg, deg53_upreg)) # down regulés dans leucémogénèse
+downreg.Tum <- Reduce(intersect, list(deg80_downreg, deg69_downreg, deg53_downreg)) # up regulés dans leucémogénèse
+# Affiche les gènes commons
+# print(upreg.Tum)
+# print(downreg.Tum)
+ordered.upreg.Tum <- cluster1vs3 %>%
+  filter(gene %in% upreg.Tum) %>%
+  arrange(desc(avg_log2FC))
+ordered.downreg.Tum <- cluster1vs3 %>%
+  filter(gene %in% downreg.Tum) %>%
+  arrange(desc(avg_log2FC))
+
+
+```
+
+```{r}
+exprMatrix <- bc.combined.cc@assays$RNA$data
+geneSets <- ordered.upreg.Tum$gene
+#Calculate Gene Set Activities
+# Build the rankings of the genes across cells (which genes are being expressed)
+geneRankings <- AUCell_buildRankings(exprMatrix, plotStats=TRUE)
+plotGeneCount(exprMatrix)
+# Calculate the AUC for each gene set
+aucellScores <- AUCell_calcAUC(geneSets, geneRankings)
+##Adding AUCell scores to merged Object (bc.combined.cc)
+#Extract the AUCell scores matrix
+aucScoresMatrix <- aucellScores@assays@data$AUC
+# Create a new assay object with the matrix
+AUC <- CreateAssayObject(data = aucScoresMatrix)
+bc.combined.cc[['upreg_Tum']] <- AUC
+```
+
+```{r,fig.width=14, fig.height=8, warning=FALSE, message=FALSE}
+Plot.enriched.terms(ordered.upreg.Tum,pct1 = 0,pct2 = 0,n.genes = 19, background.genes = backgroundrow,onto = "BP", do.treeplot = TRUE, do.cnet = T, do.emapplot = T)
+```
+```{r, fig.width=10, fig.height=12, message =FALSE, warning=FALSE}
+Idents(bc.combined.cc)<- "miceID"
+# Visualize expression of common upreg genes in Leukemic mice
+FeaturePlot(bc.combined.cc, features = c("Gata3","Lig4","Ccr9","Satb1","Ctsl"),cells = rownames(bc.combined.cc@meta.data[WhichCells(bc.combined.cc, idents = c("80","53","69")),]) ,order = T, reduction = "wnn.umap", pt.size = 0.2, ncol = 2 ) & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+
+
+```
+
+```{r, fig.width=10, fig.height=12, message =FALSE, warning=FALSE}
+# Visualize expression of common upreg genes all mice
+FeaturePlot(bc.combined.cc, features = c("Gata3","Lig4","Ccr9","Satb1","Ctsl"),order = T, reduction = "wnn.umap", pt.size = 0.2, ncol = 2 ) & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+```
+
+```{r,fig.width=14, fig.height=8, warning=FALSE, message=FALSE}
+Plot.enriched.terms(ordered.downreg.Tum,pct1 = 0,pct2 = 0,n.genes = 962, background.genes = backgroundrow,onto = "BP", do.treeplot = TRUE, do.cnet = T, do.emapplot = T)
+```
+```{r}
+
+```
+
+# Clustering
+```{r fig.width=10, fig.height=8, warning=TRUE}
+DimPlot(bc.combined.cc, group.by = "wsnn_res.2", reduction = "wnn.umap" , pt.size = 0.5, label = TRUE, repel = TRUE)
+```
+
+```{r}
+Idents(bc.combined.cc) <- "wsnn_res.2"
+cluster27bc <- FindMarkers(bc.combined.cc, ident.1 = "27")
+cluster27bc$gene <- rownames(cluster27bc)
+##Adding annotation to DE genes
+cluster27bc <- cluster27bc %>%
+    left_join(y = unique_gene_annotation, by = c("gene" = "Symbol"))
+
+#add abs value to table
+cluster27bc$abs <- abs(cluster27bc$avg_log2FC)
+cluster27bc <- cluster27bc %>%
+  filter(p_val_adj <= 0.05 & (pct.1 > 0.05 & pct.2>0.05)) %>%
+  dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name, abs)
+write.csv(cluster27bc, "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/BC/DEG_cluster27.csv", row.names=FALSE)
+```
+
+
+
+
+```{r fig.width=10, fig.height=10, warning=FALSE, message=FALSE, error=FALSE}
+Idents(bc.combined.cc)<-"wsnn_res.2"
+genes <- c("Il2ra","Ptcra","Ly6d","Hes1","Myl10","Top2a","Mki67","Pclaf","Rag1","Arpp21","Cd8a","Cd4","Myc","Cd69","Ccr9","Bex1","Chchd7","Cdkn1c","Lgals1","Itm2a","B630019A10Rik","Hivep3","Ccnd2","Igfbp4","Ly6c1","Junb","S100a4","S100a6","adt_CD69","Ccr7","S1pr1","Sell","Cxcr3","Ccl5","Gzma","Nkg7","Klrc1","Trdc","adt_TCRgd","adt_CCR7","adt_CD25","Pdcd1","percent.mt")
+
+DotPlot(bc.combined.cc, features = genes, cluster.idents = T,) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) + scale_colour_gradientn(colours = (viridis(4))) + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis() + coord_flip()+ labs(title = "Expression of marker genes by clusters")
+```
+
+
+
+
+<details>
+  <summary>**DPsm BC analysis**</summary>
+```{r}
+Idents(bc.combined.cc) <- "sig.annotation"
+ggplotly(DimPlot(bc.combined.cc, group.by = "sig.annotation",shape.by = "MULTI_ID",reduction = "wnn.umap" , cells.highlight = WhichCells(bc.combined.cc, idents = "DPsm"),sizes.highlight = 0.5, cols.highlight = "#D9F0A3FF") + labs(title = "DPsm")&
+    NoLegend() + 
+    theme_void()+
+    theme(plot.title = element_text(hjust = 0.5, face = "bold")))
+
+Idents(bc.combined.cc) <- "wsnn_res.2"
+ggplotly(DimPlot(bc.combined.cc, group.by = "wsnn_res.2",reduction = "wnn.umap" , cells.highlight = WhichCells(bc.combined.cc, idents = c("0","16","29","33","6") ),sizes.highlight = 0.5, cols.highlight = umap.palette
+                 ) + labs(title = "DPsm clusters")&
+    NoLegend() + 
+    theme_void()+
+    theme(plot.title = element_text(hjust = 0.5, face = "bold")))
+
+
+colors <- c(rep("#9AC4F8",3),"#fac341")
+names(colors) <- c("0","16","29","6")
+DimPlot(bc.combined.cc, group.by = "wsnn_res.2",reduction = "wnn.umap", cells = WhichCells(bc.combined.cc, idents = c("0","16","29","6") ),sizes.highlight = 0.5, cols= c(rep("#9AC4F8",3),"#fac341")) + labs(title = "DPsm clusters")&
+    NoLegend() + 
+    theme_void()+
+    theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+
+```{r}
+Idents(bc.combined.cc) <- "MULTI_ID"
+pretumbc.mice <- subset(bc.combined.cc,idents = c("Thymus-47","Thymus-51","Thymus-83","Thymus-84","Thymus-85"))
+
+Idents(pretumbc.mice) <- "wsnn_res.2"
+pretumbc.mice<- subset(pretumbc.mice,idents = c("0","29","16","6"))
+DPsm_physio <- bc.combined.cc@meta.data %>%
+   filter(MULTI_ID %in% c("Thymus-47","Thymus-51","Thymus-83","Thymus-84","Thymus-85") & wsnn_res.2 %in% c("0","29")) %>%
+   rownames()
+DPsm_Ptendel <- bc.combined.cc@meta.data %>%
+   filter(MULTI_ID %in% c("Thymus-47","Thymus-51","Thymus-83","Thymus-84","Thymus-85") & wsnn_res.2 %in% c("6","16")) %>%
+   rownames()
+
+cluster16 <- bc.combined.cc@meta.data %>%
+   filter(MULTI_ID %in% c("Thymus-47","Thymus-51","Thymus-83","Thymus-84","Thymus-85") & wsnn_res.2=="16") %>%
+   rownames()
+cluster6 <- bc.combined.cc@meta.data %>%
+   filter(MULTI_ID %in% c("Thymus-47","Thymus-51","Thymus-83","Thymus-84","Thymus-85") & wsnn_res.2=="6") %>%
+   rownames()
+
+cluster6vs16 <- FindMarkers(bc.combined.cc, ident.1 = cluster6, ident.2 = cluster16)
+# DPsm_Ptendelvsphysio$gene <- rownames(DPsm_Ptendelvsphysio)
+
+DPsm_Ptendelvsphysio <- FindMarkers(bc.combined.cc, ident.1 = DPsm_Ptendel, ident.2 = DPsm_physio)
+DPsm_Ptendelvsphysio$gene <- rownames(DPsm_Ptendelvsphysio)
+
+##Adding annotation to DE genes
+DPsm_Ptendelvsphysio <- DPsm_Ptendelvsphysio %>%
+    left_join(y = unique_gene_annotation, by = c("gene" = "Symbol"))
+
+#add abs value to table
+DPsm_Ptendelvsphysio$abs <- abs(DPsm_Ptendelvsphysio$avg_log2FC)
+DPsm_Ptendelvsphysio <- DPsm_Ptendelvsphysio %>%
+  filter(p_val_adj <= 0.05 & (pct.1 > 0.05 & pct.2>0.05)) %>%
+  dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name, abs)
+write.csv(DPsm_Ptendelvsphysio, "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/BC/DEG_DPsm_Ptendelvsphysio.csv", row.names=FALSE)
+```
+</details>
+
+
+<details>
+  <summary>**DP69+ BC analysis**</summary>
+
+```{r}
+Idents(bc.combined.cc) <- "sig.annotation"
+ggplotly(DimPlot(bc.combined.cc, group.by = "sig.annotation",shape.by = "MULTI_ID",reduction = "wnn.umap" , cells.highlight = WhichCells(bc.combined.cc, idents = "DP69"),sizes.highlight = 0.5, cols.highlight = "#D9F0A3FF") + labs(title = "DP69")&
+    NoLegend() + 
+    theme_void()+
+    theme(plot.title = element_text(hjust = 0.5, face = "bold")))
+
+Idents(bc.combined.cc) <- "wsnn_res.2"
+ggplotly(DimPlot(bc.combined.cc, group.by = "wsnn_res.2",reduction = "wnn.umap" , cells.highlight = WhichCells(bc.combined.cc, idents = c("12","2") ),sizes.highlight = 0.5, cols.highlight = umap.palette
+                 ) + labs(title = "DP69 clusters")&
+    NoLegend() + 
+    theme_void()+
+    theme(plot.title = element_text(hjust = 0.5, face = "bold")))
+
+
+DimPlot(bc.combined.cc, group.by = "wsnn_res.2",reduction = "wnn.umap", cells = WhichCells(bc.combined.cc, idents = c("2","12") ),sizes.highlight = 0.5, cols= c("#fac341","#9AC4F8")) + labs(title = "DP69 clusters")&
+    NoLegend() + 
+    theme_void()+
+    theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+```{r}
+DP69_physio <- bc.combined.cc@meta.data %>%
+  filter(MULTI_ID %in% c("Thymus-39","Thymus-47","Thymus-51","Thymus-70","Thymus-83","Thymus-84","Thymus-85") & wsnn_res.2 %in% c("2")) %>%
+  rownames()
+DP69_Ptendel <- bc.combined.cc@meta.data %>%
+  filter(MULTI_ID==c("Thymus-39","Thymus-47","Thymus-51","Thymus-70","Thymus-83","Thymus-84","Thymus-85") & wsnn_res.2=="12") %>%
+  rownames()
+
+DP69_Ptendelvsphysio <- FindMarkers(bc.combined.cc, ident.1 = DP69_Ptendel, ident.2 = DP69_physio)
+DP69_Ptendelvsphysio$gene <- rownames(DP69_Ptendelvsphysio)
+
+##Adding annotation to DE genes
+DP69_Ptendelvsphysio <- DP69_Ptendelvsphysio %>%
+    left_join(y = unique_gene_annotation, by = c("gene" = "Symbol"))
+
+#add abs value to table
+DP69_Ptendelvsphysio$abs <- abs(DP69_Ptendelvsphysio$avg_log2FC)
+DP69_Ptendelvsphysio <- DP69_Ptendelvsphysio %>%
+  filter(p_val_adj <= 0.05 & (pct.1 > 0.05 & pct.2>0.05)) %>%
+  dplyr::select(p_val, avg_log2FC, pct.1, pct.2, p_val_adj, gene, Name, abs)
+write.csv(DP69_Ptendelvsphysio, "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/BC/DEG_DP69_Ptendelvsphysio.csv", row.names=FALSE)
+``` 
+</details>
+
+<details>
+  <summary>**WT subset analysis**</summary>
+
+```{r, warning=FALSE, message=FALSE, error=FALSE }
+load(file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/miceWT_2023_merged.Robj")
+DefaultAssay(miceWT) <- 'RNA'
+Idents(miceWT) <- "wsnn_res.0.6"
+DimPlot(miceWT, reduction = "wnn.umap", group.by = "wsnn_res.0.6", label = T, label.size = 6)
+```
+
+
+```{r fig.width=14, fig.height=6, warning=FALSE, message=FALSE, error=FALSE}
+FeaturePlot(miceWT, reduction = "wnn.umap", features = c("adt_CD25","Il2ra","Mki67","adt_CD8","adt_CD4","adt_CD3","adt_CD62L","adt_CD69","Myc","adt_TCRgd","Rag1","adt_CCR7")) & scale_colour_gradientn(colours = (viridis::rocket(10, direction = -1)))
+```
+
+
+```{r fig.width=14, fig.height=10, warning=FALSE, message=FALSE, error=FALSE}
+Idents(miceWT)<-"wsnn_res.0.6"
+miceWT@active.ident <- factor(miceWT@active.ident,levels=c("6","11","14","5","0","7","2","1","15","10","4","9","3","8","12","13"))
+genes <- c("Il2ra","Ptcra","Top2a","Mki67","Rag1","Cd8a","Cd4","Ccr9","Itm2a","adt_CD69","Ccr7","S1pr1","Sell","Cxcr3","Ccl5","Gzma","Nkg7","Klrc1","Trdc","adt_TCRgd","adt_CCR7","adt_CD25","adt_CD4","adt_CD8")
+dp1<- DotPlot(miceWT, features = genes) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) + scale_colour_gradientn(colours = (viridis(4))) + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis() + coord_flip()+ labs(title = "Expression of marker genes by clusters")
+Idents(miceWT)<-"manual.annotation"
+miceWT@active.ident <-factor(miceWT@active.ident,levels=c("DN","DPblast","DPsm-CD25+","DPsm-CCR7+","DPsm","DP69int","DP69+","SP4","SP8","Tgd","NK"))
+dp2 <- DotPlot(miceWT, features = genes) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) + scale_colour_gradientn(colours = (viridis(4))) + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis() + coord_flip()+ labs(title = "Expression of marker genes by cell types")     
+plot_grid(dp1, dp2, ncol = 2)
+```
+
+```{r fig.width=8, fig.height=5}
+
+WT.palette <- c('#59A5A9FF', '#60AB9EFF', '#69B190FF', '#77B77DFF', '#8CBC68FF', '#A6BE54FF', '#BEBC48FF', '#D1B541FF', '#DDAA3CFF', '#E49C39FF', '#E78C35FF' )
+names(WT.palette) <- c("DN", "DPsm-CD25+", "DPsm-CCR7+", "DPblast", "DPsm", "DP69int", "DP69+", "SP4","SP8", "Tgd", "NK")
+DimPlot(miceWT,reduction = "wnn.umap", group.by = "manual.annotation", label = T, cols = WT.palette , pt.size = 0.2,label.size = 3 )
+```
+What are the differences between DPsmCCR7+ et others DPsm ?
+```{r,fig.width=14, fig.height=10, warning=FALSE, message=FALSE, error=FALSE}
+Idents(miceWT) <- "manual.annotation"
+mkdp.ccr7  <- FindMarkers(miceWT, ident.1 = "DPsm-CCR7+", ident.2 = "DPsm")
+mkdp.ccr7$gene <- rownames(mkdp.ccr7)
+#Adding annotation to DE genes
+mkdp.ccr7 <- mkdp.ccr7 %>%
+  left_join(y = unique_gene_annotation, by = c("gene" = "Symbol"))
+datatable(mkdp.ccr7,filter = 'top',options = list(pageLength = 20))
+```
+
+```{r fig.width=14, fig.height=10, warning=FALSE, message=FALSE, error=FALSE}
+Idents(miceWT) <- "manual.annotation"
+dge_adt.dp.ccr7  <- FindMarkers(miceWT, ident.1 = "DPsm-CCR7+", ident.2 = "DPsm", assay = "ADT")
+dge_adt.dp.ccr7
+```
+DPsm-CCR7+ express CCR7  and CD69 protein...
+```{r, fig.width=10, fig.height=4, warning=FALSE, message=FALSE, error=FALSE}
+VlnPlot(miceWT, feature = "adt_CCR7", group.by = "manual.annotation")|VlnPlot(miceWT, feature = "Ccr7", group.by = "manual.annotation")
+```
+```{r, fig.width=10, fig.height=4, warning=FALSE, message=FALSE, error=FALSE}
+VlnPlot(miceWT, feature = "adt_CD69", group.by = "manual.annotation")|VlnPlot(miceWT, feature = "Cd69", group.by = "manual.annotation")
+```
+# ScigeneX reveals co-expressed gene modules across cell populations
+
+```{r}
+# # Select informative genes
+# miceWT_scigenex20.3 <- select_genes(miceWT,
+#                               k = 20,
+#                               distance_method = "pearson",
+#                               which_slot = "data",
+#                               row_sum=2)
+# 
+# # Run MCL
+# miceWT_scigenex20.3 <- gene_clustering(miceWT_scigenex20.3,
+#                                  s = 5,
+#                                  threads = 2,
+#                                  inflation = 3)
+load(file= "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/miceWT_scigenex20.3.Robj")
+miceWT_scigenex20.3@gene_clusters
+```
+
+```{r fig.width=14, fig.height=10, warning=FALSE, message=FALSE, error=FALSE}
+Idents(miceWT)<-"manual.annotation"
+miceWT@active.ident <- factor(miceWT@active.ident,levels=c("DN","DPblast","DPsm-CD25+","DPsm-CCR7+","DPsm","DP69int","DP69+","SP4","SP8","Tgd","NK"))
+plot_ggheatmap(miceWT_scigenex20.3, 
+               use_top_genes = FALSE,
+               ident=Idents(miceWT)) + ggtitle("Heatmap of Co-Expressed Gene Modules Identified by SciGeneX (k = 20, inflation= 3)")
+```
+
+```{r fig.width=10, fig.height=8, warning=FALSE, message=FALSE, error=FALSE}
+miceWT_scigenex20.3 <- enrich_go(miceWT_scigenex20.3, specie = "Mmusculus", ontology = "BP")
+plot_clust_enrichments(miceWT_scigenex20.3, gradient_palette=colors_for_gradient("Je1"), 
+                       floor=50,
+                       nb_go_term = 2) + 
+    theme(axis.text.y = element_text(size=12))
+```
+
+</details>
+# Assign cell types to cells in merged object based on ScigeneX's gene modules and ADT data
+```{r fig.width=10, fig.height=7,message=FALSE, warning=FALSE}
+#Script : ScigeneX_Balbc
+DimPlot(bc.combined.cc, group.by = "sig.annotation", reduction = "wnn.umap", cols = c(palette1,palette2,palette3,palette4), label =T, label.color = "black",label.size = 5, pt.size = 0.3, repel =TRUE)
+```
+
+```{r}
+table(bc.combined.cc@meta.data$MULTI_ID,bc.combined.cc@meta.data$annotation)
+```
+
+```{r}
+Idents(bc.combined.cc) <- "sig.annotation"
+DPbar <- subset(bc.combined.cc,  idents = c("DPblast","DPsm","DPsmCD25+","DPsmCCR7+","DP69","DPblast Myc+","DPsm Myc+","DP69 Myc+","Dying cells"))
+Idents(DPbar) <- "annotation"
+T.DPbar <- subset(DPbar, idents = c("Thymus-WT","Thymus-PreTum late","Thymus-Tum"))
+data1 <- as.data.frame(prop.table(prop.table(table(T.DPbar@meta.data$sig.annotation,T.DPbar@meta.data$annotation),1)*100,2)*100)
+data1 <-na.omit(data1)
+#order leukestage level
+data1$Var2 <- factor(data1$Var2, levels = c("Thymus-WT","Thymus-PreTum late","Thymus-Tum"))
+cellnumber <- data.frame(colSums(table(T.DPbar@meta.data$MULTI_ID,T.DPbar@meta.data$annotation)))
+cellnumber$annotation <- rownames(cellnumber)
+row_order <-c("Thymus-WT","Thymus-PreTum late","Thymus-Tum")
+cellnumber <- cellnumber[row_order,]
+annotation <- data1$Var2
+sig.annotation <- data1$Var1
+Percentage <- data1$Freq
+text <- cellnumber$colSums.table.T.DPbar.meta.data.MULTI_ID..T.DPbar.meta.data.annotation..
+# Stacked bar plot
+cols <- c("#FDE725FF","#7AD151FF","#22A884FF","#2A788EFF","#414487FF","#6A00A8FF","#B12A90FF","#E16462FF","#8785B2FF")
+names(cols) <-  c("DPblast","DPsm","DPsmCD25+","DPsmCCR7+","DP69","DPblast Myc+","DPsm Myc+","DP69 Myc+","Dying cells")
+ggplot(data1, aes(fill=sig.annotation, y=Percentage, x=annotation)) + 
+    geom_bar(position="stack", stat="identity", width=0.7)+
+   xlab("Stade of leukemia")+ylab("Percentage")+ theme(legend.position="bottom")+scale_fill_manual(values =c(palette1,palette2,palette3,palette4)) +theme_light()+geom_hline(yintercept=c(25,50,75), linetype="dashed", color = "grey60")+ annotate("text", x = 1:3, y=103, label = c(text))
+```
+
+```{r, message=FALSE}
+Idents(bc.combined.cc) <- "sig.annotation"
+maturebar <- subset(bc.combined.cc,  idents = c("DP to SP","SP8","SP4","SP4CD69+","NK","Tgd early","Tgd mature","MAIT", "Dying cells","Undefined Myc+"))
+Idents(maturebar) <- "annotation"
+Spleen.bar <- subset(maturebar,  idents = c("Spleen-WT","Spleen-PreTum late", "Spleen-Tum"))
+data2 <- as.data.frame(prop.table(prop.table(table(Spleen.bar@meta.data$sig.annotation,Spleen.bar@meta.data$annotation),1)*100,2)*100)
+data2 <- na.omit(data2)
+#order leukestage level
+data2$Var2 <- factor(data2$Var2, levels = c("Spleen-WT","Spleen-PreTum late", "Spleen-Tum"))
+cellnumber <- data.frame(colSums(table(Spleen.bar@meta.data$MULTI_ID,Spleen.bar@meta.data$annotation)))
+cellnumber$annotation <- rownames(cellnumber)
+row_order <-c("Spleen-WT","Spleen-PreTum late", "Spleen-Tum")
+cellnumber <- cellnumber[row_order,]
+annotation <- data2$Var2
+sig.annotation <- data2$Var1
+Percentage <- data2$Freq
+text <- cellnumber$colSums.table.Spleen.bar.meta.data.MULTI_ID..Spleen.bar.meta.data.annotation..
+# Stacked bar plot
+cols2 <- c("#FDE725FF","#7AD151FF","#2A788EFF","#414487FF","#DE4968FF","#6A00A8FF","#B12A90FF","#E16462FF","#8785B2FF","#C71000" )
+names(cols2) <- c("DP to SP","SP8","SP4","SP4CD69+","NK","Tgd early","Tgd mature","MAIT", "Dying cells","Undefined Myc+")
+ggplot(data2, aes(fill=sig.annotation, y=Percentage, x=annotation)) + 
+    geom_bar(position="stack", stat="identity", width=0.7)+
+   xlab("Stade of leukemia")+ylab("Percentage")+ theme(legend.position="bottom")+scale_fill_manual(values =c(palette1,palette2,palette3,palette4)) +theme_light()+geom_hline(yintercept=c(25,50,75), linetype="dashed", color = "grey60")+ annotate("text", x = 1:3, y=103, label = c(text))
+```
+
+```{r, fig.width=10, fig.height=5,message=FALSE, warning=FALSE}
+VlnPlot(bc.combined.cc, features = "Myc", idents = c("Thymus-PreTum early","Thymus-PreTum late","Thymus-Tum","Spleen-PreTum early","Spleen-PreTum late", "Spleen-Tum"), cols=c("#FDE725FF","#FCA636FF","#414487FF","#DE4968FF","#22A884FF","#440154FF"))+geom_hline(yintercept = 0.3, linetype ="dashed", size = 1, color='firebrick1')
+
+```
+
+```{r, fig.width=7, fig.height=5, warning=FALSE, message=FALSE}
+FeaturePlot(bc.combined.cc, features = "Myc", reduction = "wnn.umap", split.by = )+ labs(title = "Myc expression") & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+```
+During the course of leukemogenesis, oncogenic Myc expression is found in a few cells from the pre-leukemic ‘early’ stage, while numbers of Myc+ cells drastically expand at the pre-leukemic ‘late’ stage  in Thymus. At the leukemic stage most T cells from thymus and spleen are tumoral Myc+ blasts
+
+```{r, fig.width=12, fig.height=7, warning=FALSE, message=FALSE}
+Myc.pos.cells <- WhichCells(bc.combined.cc, expression = Myc > 0.1)
+DimPlot(bc.combined.cc, group.by = "annotation", split.by = "Myc_expression", reduction = "wnn.umap",cols = c(annotation.palette1,annotation.palette2), pt.size = 0.2, label = TRUE, repel=TRUE )
+```
+
+```{r, fig.width=12, fig.height=7, warning=FALSE, message=FALSE}
+Myc.pos.cells <- WhichCells(bc.combined.cc, expression = Myc > 0.1)
+DimPlot(bc.combined.cc, group.by = "sig.annotation", split.by = "Myc_expression", reduction = "wnn.umap",cols = c(palette1,palette2,palette3,palette4), pt.size = 0.2, label = TRUE, repel=TRUE )
+VlnPlot(bc.combined.cc, features = "Myc", group.by = "sig.annotation",cols = c(palette1,palette2,palette3,palette4))
+```
+
+
+
+# BALB/c TCR analysis
+```{r fig.width=15, fig.height=8}
+#Script : Immcantation_BalBC.Rmd
+bc.combined.cc$OTIIstatus <- factor(bc.combined.cc$OTIIstatus, levels = c("OTII","OTII - multichains", "non OTII", "OTII - incomplete", "unknown"))
+DimPlot(bc.combined.cc, group.by = "OTIIstatus", order = rev(c("OTII", "OTII - multichains", "non OTII", "OTII - incomplete", "unknown")),split.by = "OTIIstatus", reduction = "wnn.umap", cols = OTIIpalette, pt.size = 0.5, ncol = 3) + labs(title = "OTII status")
+```
+
+```{r fig.width=17, fig.height=7}
+DimPlot(bc.combined.cc, group.by = "OTIIstatus", split.by = "annotation", reduction = "wnn.umap",ncol = 4, cols = OTIIpalette, pt.size = 0.5) + labs(title = "OTII status")
+```
+
+```{r, fig.width=10, fig.height=5, warning=FALSE, message=FALSE}
+#Percentage of OTII cells in each state
+crosstabOTII <-as.data.frame(prop.table(table(bc.combined.cc@meta.data$OTIIstatus,bc.combined.cc@meta.data$annotation),2)*100)
+colnames(crosstabOTII) <- c("OTIIstatus", "Sample", "Proportion")
+samples <- unique(crosstabOTII$Sample)
+pie_list <- list()
+for(sample in samples) {
+  df_sample <- subset(crosstabOTII, Sample == sample)
+  p <- ggplot(df_sample, aes(x = "", y = Proportion , fill = OTIIstatus)) +
+    geom_bar(stat = "identity") +
+    coord_polar("y", start = 0) +
+    theme_void() +
+    labs(title = paste (sample)) +
+    theme(legend.position = "none") +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold"))+ #
+    scale_fill_manual(values = OTIIpalette)
+  
+  pie_list[[sample]] <- p
+}
+#
+wrap_plots(pie_list, ncol = 4, nrow = 2, widths = 10, heights = 5)
+```
+
+```{r}
+pie_list <- list()
+
+for(sample in samples) {
+  df_sample <- subset(crosstabOTII, Sample == sample)
+  
+  p <- ggplot(df_sample, aes(x = "", y = Proportion , fill = OTIIstatus)) +
+    geom_bar(stat = "identity") +
+    coord_polar("y", start = 0) +
+    theme_void() +
+    labs(title = paste(sample)) +
+    theme(legend.position = "none") +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold")) +
+    scale_fill_manual(values = OTIIpalette) +
+    geom_text(aes(label = ifelse(Proportion > 10, paste0(round(Proportion, 1), "%"), "")), 
+              position = position_stack(vjust = ifelse(Proportion > 10, 0.5, 1.1)),
+              size = ifelse(Proportion > 10, 3, 2))
+  
+  pie_list[[sample]] <- p
+}
+
+wrap_plots(pie_list, ncol = 4, nrow = 2, widths = 10, heights = 5)
+
+```
+
+
+```{r, fig.width=10, fig.height=5, warning=FALSE, message=FALSE}
+#Percentage of OTII cells normalized across states
+tabOTII <-as.data.frame(prop.table(prop.table(table(bc.combined.cc@meta.data$OTIIstatus,bc.combined.cc@meta.data$annotation),1)*100,2)*100)
+colnames(tabOTII) <- c("OTIIstatus", "Sample", "Proportion")
+samples <- unique(tabOTII$Sample)
+pie_list <- list()
+for(sample in samples) {
+  df_sample <- subset(tabOTII, Sample == sample)
+  p <- ggplot(df_sample, aes(x = "", y = Proportion , fill = OTIIstatus)) +
+    geom_bar(stat = "identity") +
+    coord_polar("y", start = 0) +
+    theme_void() +
+    labs(title = paste (sample)) +
+    theme(legend.position = "none") +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold"))+ #
+    scale_fill_manual(values = OTIIpalette)
+  pie_list[[sample]] <- p
+}
+#
+wrap_plots(pie_list, ncol = 4, nrow = 2, widths = 10, heights = 5)
+```
+
+Results from ADT and V(D)J sequences suggested that the level of transgenic OT-II TCR decreased during leukemogenesis.
+
+
+```{r}
+table(bc.combined.cc@meta.data$annotation,bc.combined.cc@meta.data$OTIIstatus)
+```
+
+```{r, fig.width=7, fig.height=7, warning=FALSE, message=FALSE}
+df_radarchart<-as.data.frame(prop.table(table(bc.combined.cc@meta.data$sig.annotation,bc.combined.cc@meta.data$OTIIstatus),2)*100)
+colnames(df_radarchart) <- c( "Annotation","OTIIstatus","Proportion")
+OTIIpalette <- c("#FDE725FF","#414487FF","#F26839","#6A00A8FF","#DE4968FF","#7AD151FF","#808080FF")
+radarchart_OTII <- function(df_radarchart,ot2status,color, max.prop, seq.by) {
+  df <- subset(df_radarchart, OTIIstatus == ot2status)
+  df_t <- data.frame(t(df[,"Proportion"]))
+  colnames(df_t) <- df$Annotation
+  df_t<- as.data.frame(rbind(rep(max.prop,20),rep(0,20),df_t)[,1:20])
+  radarchart(df_t, cglcol="grey", cglty=1 ,cglwd=0.8, vlcex=0.8, pcol=color,pty = 20 , plty=1, caxislabels=paste(seq(from = 0,to = (max.prop),by = seq.by),"%"), axislabcol = "grey40", axistype = 4, title = paste(ot2status), plwd = 2)
+}
+radarchart_OTII(df_radarchart = df_radarchart, ot2status = "OTII", color = "#FDE725FF", max.prop = 60, seq.by = 15 )
+radarchart_OTII(df_radarchart = df_radarchart, ot2status = "OTII - TCRA only", color = "#414487FF", max.prop = 40, seq.by = 10  )
+radarchart_OTII(df_radarchart = df_radarchart, ot2status = "OTII - TCRB only", color = "#F26839", max.prop = 40, seq.by = 10 )
+radarchart_OTII(df_radarchart = df_radarchart, ot2status = "OTII -TRAV multichains", color = "#6A00A8FF" , max.prop = 60, seq.by = 15)
+radarchart_OTII(df_radarchart = df_radarchart, ot2status = "OTII -TRBV multichains", color = "#DE4968FF", max.prop = 40, seq.by = 10 )
+radarchart_OTII(df_radarchart = df_radarchart, ot2status = "non OTII", color = "#7AD151FF", max.prop = 40, seq.by = 10)
+radarchart_OTII(df_radarchart = df_radarchart, ot2status = "unknown", color = "#808080FF", max.prop = 20, seq.by = 5)
+
+
+
+```
+
+## OTII TCRb
+```{r fig.width=14, fig.height=5, warning=FALSE, message=FALSE, error=FALSE}
+TCRgenotype_all <- read.csv(file = '/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/TCR_genotype_BC.csv', sep = ',', header = TRUE)
+p1 <- FeaturePlot(bc.combined.cc, features = "Trbv12-2", reduction = "wnn.umap")+ labs(title = "mRNA : Trbv12-2") & scale_colour_gradientn(colours = rev(viridis::rocket(10))) 
+p2 <- FeaturePlot(bc.combined.cc, features = "adt_TCR-VB5", reduction = "wnn.umap") + labs(title = "ADT : OTII Vb5") & scale_colour_gradientn(colours = rev(viridis::rocket(10))) 
+Vb5 <- TCRgenotype_all[with(TCRgenotype_all, grepl('.*TRBV12-2.*TRBJ2-4.*', CTgene)),]
+p3 <- DimPlot(bc.combined.cc, reduction = "wnn.umap", cells.highlight = Vb5$cell_id, cols = "#F9E8D3FF",cols.highlight = "#E02F52FF", pt.size = 0.2,sizes.highlight = 0.5) + labs(title = "VDJ : OTII Vb5") 
+plot_grid(p1, p2,p3, ncol = 3)
+```
+
+```{r, fig.width=16, fig.height=6, warning=FALSE, message=FALSE, error=FALSE}
+
+VlnPlot(bc.combined.cc, features = "Trbv12-2", split.by = "annotation", group.by = "annotation", idents = c("Thymus-WT","Thymus-PreTum early","Thymus-PreTum late","Thymus-Tum"), sort = 'increasing', pt.size = 0.1)+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)|VlnPlot(bc.combined.cc, features = "adt_TCR-VB5", idents = c("Thymus-WT","Thymus-PreTum early","Thymus-PreTum late","Thymus-Tum"), sort = 'increasing', split.by = "annotation", group.by = "annotation", pt.size = 0.1)+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+```
+```{r, fig.width=16, fig.height=6, warning=FALSE, message=FALSE, error=FALSE}
+VlnPlot(bc.combined.cc, features = "Trbv12-2", split.by = "annotation", group.by = "annotation", idents = c("Spleen-WT","Spleen-PreTum early","Spleen-PreTum late","Spleen-Tum"), pt.size = 0.1)+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)|VlnPlot(bc.combined.cc, features = "adt_TCR-VB5", idents = c("Spleen-WT","Spleen-PreTum early","Spleen-PreTum late","Spleen-Tum"), split.by = "annotation", group.by = "annotation", pt.size = 0.1)+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+```
+```{r, fig.width=16, fig.height=6, warning=FALSE, message=FALSE, error=FALSE}
+colors <- c(paletteer::paletteer_d("colorBlindness::Blue2DarkRed12Steps"), rev(paletteer::paletteer_d("ggsci::default_gsea")))
+VlnPlot(bc.combined.cc, features = "Trbv12-2", split.by = "sig.annotation", group.by = "annotation", cols = colors , idents = c("Thymus-WT","Thymus-PreTum early","Thymus-PreTum late","Thymus-Tum"), sort = 'increasing', pt.size = 0.1)
+```
+
+
+Besides the Trbv12-2, we can see some other chains beta poping out for different mice
+```{r, warning=FALSE, message=FALSE}
+all.markers <- read.csv(file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/markers_bc_merged.csv", header = T, sep = ',')
+TCR.features <- grep(pattern = "^Tr[a:b]v|^TR[A:B]V", x= all.markers$gene, value = TRUE)
+print(TCR.features)
+```
+
+
+```{r fig.width=15, fig.height=14, warning=FALSE, message=FALSE}
+FeaturePlot(bc.combined.cc, features = c("Trbv12-2","Trbv17","Trbv16","Trbv31","Trbv2","Trbv20","Trbv15","Trbv13-1","Trbv3"), ncol = 3, reduction = "wnn.umap") & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+```
+
+```{r, fig.width=15, fig.height=14, warning=FALSE, message=FALSE}
+VlnPlot(bc.combined.cc, features = c("Trbv12-2","Trbv17","Trbv16","Trbv31","Trbv2","Trbv20","Trbv15","Trbv13-1"),group.by = "miceID", pt.size = 0)+ theme(legend.position = "none")
+```
+Trbv17 is found in Thymus an Spleen 80 (Tum)
+Trbv16 is found in Thymus 70 and Thymus 84 (PreTum late)
+Trbv31 is found in Thymus 53 (Tum)
+Trbv2 is found in Thymus 85 (PreTum late)
+Trbv20 is found in Thymus 69 (Tum)
+Trbv15 is found in Thymus 47 (PreTum early)
+Trbv13-1 is found in Thymus 52 (PreTum late)
+## OTII TCRa
+```{r fig.width=14, fig.height=5, warning=FALSE, message=FALSE, error=FALSE}
+p1 <- FeaturePlot(bc.combined.cc, features = "Trav14d-1", reduction = "wnn.umap")+ labs(title = "mRNA : Trav14d-1") & scale_colour_gradientn(colours = rev(viridis::rocket(10))) 
+p2 <- FeaturePlot(bc.combined.cc, features = "adt_TCR-VA2", reduction = "wnn.umap") + labs(title = "ADT : OTII TCRa") & scale_colour_gradientn(colours = rev(viridis::rocket(10))) 
+Va2 <- TCRgenotype_all[with(TCRgenotype_all, grepl('.*TRAV14.*TRAJ31.*', CTgene)),]
+p3 <- DimPlot(bc.combined.cc, reduction = "wnn.umap", cells.highlight = Vb5$cell_id, cols = "#F9E8D3FF",cols.highlight = "#E02F52FF", pt.size = 0.2,sizes.highlight = 0.5) + labs(title = "VDJ : OTII Va2") 
+plot_grid(p1, p2,p3, ncol = 3)
+```
+
+```{r fig.width=16, fig.height=6, warning=FALSE, message=FALSE, error=FALSE}
+VlnPlot(bc.combined.cc, features = "Trav14d-1", split.by = "annotation", group.by = "annotation", pt.size = 0.1)+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)|VlnPlot(bc.combined.cc, features = "adt_TCR-VA2", split.by = "annotation", group.by = "annotation", pt.size = 0.1)+
+  stat_summary(fun = "median",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+```
+
+```{r, fig.width=10, fig.height=4, warning=FALSE, message=FALSE, error=FALSE}
+FeaturePlot(bc.combined.cc, features = c("Trav9-4"), ncol = 3, reduction = "wnn.umap") & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+```
+
+
+# PI3K/AKT pathway
+```{r}
+AKTpath <- c("Cfl1","Traf2","E2f1","Tsc2","Ppp1ca","Stat2","Tiam1","Sla","Cdkn1a","Rps6ka3","Rps6ka1","Cdkn1b","Nfkbib","Cdk2","Cab39","Sqstm1","Myd88","Prkar2a","Smad2","Rit1","Ripk1","Prkag1","Acaca","Gngt1","Ddit3","Pik3r3","Pitx2","Cxcr4","Pten","Nck1","Fgf17","Atf1","Ap2m1","Tnfrsf1a","Pikfyve","Prkaa2","Nod1","Trib3","Pin1","Mapk1","Mapk8","Mapk9","Mapk10","Map2k3","Map2k6","Map3k7","Dapp1","Ecsit","Gsk3b","Vav3","Sfn","Ywhab","Ube2d3","Pla2g12a","Actr2","Cab39l","Fgf22","Akt1s1","Pak4","Dusp3","Ppp2r1b","Actr3","Rptor","Them4","Pdk1","Ralb","Arpc3","Tbk1","Ube2n","Arhgdia","Irak4","Cltc","Mapkap1","Grk2","Akt1","Calr","Camk4","Cdk1","Cdk4","Csnk2b","Mknk2","Mknk1","Egfr","Eif4e","Fgf6","Slc2a1","Gna14","Grb2","Hras","Il2rg","Il4","Lck","Ngf","Pfn1","Prkcb","Plcb1","Plcg1","Rac1","Raf1","Hsp90b1","Fasl","Itpr2","Arf1","Ptpn11","Adcy2")
+
+exprMatrix <- bc.combined.cc@assays$RNA$data
+geneRankings <- AUCell_buildRankings(exprMatrix, plotStats=TRUE)
+# Calculate the AUC for each gene set
+aucellScores <- AUCell_calcAUC(AKTpath, geneRankings)
+aucScoresMatrix <- aucellScores@assays@data$AUC
+# Create a new assay object with the matrix
+auc_AKTpath <- CreateAssayObject(data = aucScoresMatrix)
+bc.combined.cc[['AUC_AKT']] <- auc_AKTpath
+VlnPlot(bc.combined.cc, features = c("aucakt_geneSet"), group.by = "wsnn_res.2", pt.size = 0) & geom_boxplot(width=0.1, fill="white")
+FeaturePlot(bc.combined.cc, features = c("aucakt_geneSet"),  reduction = "wnn.umap") & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+```
+
+

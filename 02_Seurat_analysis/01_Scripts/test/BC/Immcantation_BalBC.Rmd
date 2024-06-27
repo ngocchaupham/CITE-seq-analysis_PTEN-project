@@ -1,0 +1,161 @@
+---
+title: "Immcantation_BalBC"
+output: html_document
+date: "2024-03-18"
+editor_options: 
+  chunk_output_type: console
+---
+
+#Load libraries 
+```{r}
+library(data.table)
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(ggplot2)
+library(Seurat)
+library(plotly)
+```
+
+```{r}
+#load(file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/merge_2023exp_reg_cc.Robj")
+TCR_Data_230303_pass <- read.table(file = '/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/TCR/BALBC/230303/filtered_contig_igblast_db-pass.tsv', sep = '\t', header = TRUE)
+TCR_Data_230303_fail <- read.table(file = '/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/TCR/BALBC/230303/filtered_contig_igblast_db-fail.tsv', sep = '\t', header = TRUE)
+TCR_Data_230320_pass <- read.table(file = '/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/TCR/BALBC/230320/filtered_contig_igblast_db-pass.tsv', sep = '\t', header = TRUE)
+TCR_Data_230320_fail <- read.table(file = '/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/TCR/BALBC/230320/filtered_contig_igblast_db-fail.tsv', sep = '\t', header = TRUE)
+TCR_Data_230327_pass <- read.table(file = '/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/TCR/BALBC/230327/filtered_contig_igblast_db-pass.tsv', sep = '\t', header = TRUE)
+TCR_Data_230327_fail <- read.table(file = '/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/TCR/BALBC/230327/filtered_contig_igblast_db-fail.tsv', sep = '\t', header = TRUE)
+```
+
+#Dataframe formating
+```{r}
+#Create a function to trim the cell_id and append sample information before barcodes
+barcoder <- function(df, trim="\\-1", sample) {
+  df$cell_id <- gsub(trim, "", df$cell_id)
+  df$cell_id <- paste0(sample,"_", df$cell_id)
+  df[df == ''] <- NA
+  return(df)
+}
+TCR_Data_230303_pass <- barcoder(TCR_Data_230303_pass ,sample = "230303")
+TCR_Data_230303_fail<- barcoder(TCR_Data_230303_fail ,sample = "230303")
+TCR_Data_230320_pass <- barcoder(TCR_Data_230320_pass ,sample = "230320")
+TCR_Data_230320_fail<- barcoder(TCR_Data_230320_fail ,sample = "230320")
+TCR_Data_230327_pass <- barcoder(TCR_Data_230327_pass ,sample = "230327")
+TCR_Data_230327_fail<- barcoder(TCR_Data_230327_fail ,sample = "230327")
+```
+When re running on mouse genome in the pass TCR there is no TRA. They are all in the don't pass filter
+In makeDB.py doc this is due to this possibilities :
+- no productivity information
+- no gene V assignment
+- no J assignment
+- no junction region.
+```{r}
+#Explore TCR data 
+##TCR pass
+length(TCR_Data_230303_pass$locus=='TCRB') # In the pass TCR there is no TRA, all are TCRB
+##TCR fail
+length(TCR_Data_230303_fail$productive==TRUE) # All are productive
+sum(is.na(TCR_Data_230303_fail$v_call)) # They have all V assignment 
+factor(unique(TCR_Data_230303_fail$v_call)) # But some have more than one V assignment
+sum(is.na(TCR_Data_230303_fail$j_call))# They have all J assignment 
+factor(unique(TCR_Data_230303_fail$j_call)) # Some have two j genes : TRAJ31*01 and TRAJ31*02; TRAJ12*01 and TRAJ12*02
+sum(is.na(TCR_Data_230303_fail$junction)) # They have all junction region
+```
+
+#Combine all TRA and TRB based on barcodes
+```{r}
+TCRAB_230303 <- bind_rows(TCR_Data_230303_pass, TCR_Data_230303_fail)
+TCRAB_230320 <- bind_rows(TCR_Data_230320_pass, TCR_Data_230320_fail)
+TCRAB_230327 <- bind_rows(TCR_Data_230327_pass, TCR_Data_230327_fail)
+length(unique(TCRAB_230303$cell_id)) #number of cells for which we have TCR information
+length(unique(TCRAB_230320$cell_id))
+length(unique(TCRAB_230327$cell_id))
+```
+
+#Extract some relevant informations from the full dataframes
+```{r}
+TCRAB_230303_extract <- subset(TCRAB_230303, select = c("cell_id","locus", "v_call", "d_call", "j_call", "c_call"))
+TCRAB_230320_extract <- subset(TCRAB_230320, select = c("cell_id","locus", "v_call", "d_call", "j_call", "c_call"))
+TCRAB_230327_extract <- subset(TCRAB_230327, select = c("cell_id","locus", "v_call", "d_call", "j_call", "c_call"))
+TCR_all <- bind_rows(TCRAB_230303_extract,TCRAB_230320_extract, TCRAB_230327_extract)
+```
+
+```{r}
+#Function to generate V(D)J genotype of each cell
+makeCTgenes <- function(df, chainA = "TRA", chainB = "TRB") {
+  # Create TCRA and TCRB columns
+  df <- df %>%
+    mutate(TCRA = if_else(locus == chainA, str_c(str_replace_na(v_call), str_replace_na(j_call), str_replace_na(c_call), sep = "."), NA_character_)) %>%
+    mutate(TCRB = if_else(locus == chainB, str_c(str_replace_na(v_call), str_replace_na(d_call), str_replace_na(j_call), str_replace_na(c_call), sep = "."), NA_character_))
+  df <- df %>%
+    group_by(cell_id) %>%
+    summarize(
+      TCRA = str_c(unique(na.omit(TCRA)), collapse = "+"), # Concatenate unique non-NA TCRA values
+      TCRB = str_c(unique(na.omit(TCRB)), collapse = "+")) %>% # Concatenate unique non-NA TCRB values
+    mutate(across(c(TCRA, TCRB), ~na_if(.x, "")))# Replace empty strings with NA to ensure NAs are represented correctly
+  df$CTgene <- str_c(str_replace_na(df$TCRA), str_replace_na(df$TCRB), sep = "_")
+    return(df)
+}
+TCRgenotype_all <- makeCTgenes(TCR_all)
+write.csv(TCRgenotype_all, file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/TCR_genotype_BC.csv", row.names=FALSE)
+```
+
+```{r}
+#check outputs with the results of Cellranger & scRepertoire
+bc.combined.vdj@meta.data["230320_CGCTATCCATCACGTA",]
+TCRgenotype_all["230320_CGCTATCCATCACGTA",]
+```
+
+```{r}
+TCRgenotype_all <- read.csv("/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/outputs/BC/TCR_genotype_BC.csv")
+```
+
+
+```{r}
+OTII <- TCRgenotype_all[with(TCRgenotype_all, grepl('^TRAV14.*TRAJ31.*_.*TRBV12-2.*TRBJ2-4.*', CTgene) & !grepl('.*\\+.*', CTgene)),]
+OTIItrav <- TCRgenotype_all[with(TCRgenotype_all, grepl('^TRAV14.*TRAJ31.*_NA', CTgene)),]
+OTIItrbv <- TCRgenotype_all[with(TCRgenotype_all, grepl('^NA_TRBV12-2.*TRBJ2-4.*', CTgene)),]
+OTIImultiTRAV <- TCRgenotype_all[with(TCRgenotype_all, grepl('.*TRAV14.*TRAJ31.*_.*TRBV12-2.*TRBJ2-4.*', CTgene) & grepl('.*\\+.*_.*', CTgene)),]
+OTIImultiTRBV <- TCRgenotype_all[with(TCRgenotype_all, grepl('.*TRAV14.*TRAJ31.*_.*TRBV12-2.*TRBJ2-4.*', CTgene) & grepl('.*_.*\\+.*', CTgene)),]
+OTII_all <- bind_rows(OTII, OTIItrav, OTIItrbv, OTIImultiTRAV, OTIImultiTRBV)
+nonOTII <- setdiff(TCRgenotype_all$cell_id, OTII_all$cell_id)
+cells_used <-rownames(bc.combined.cc@meta.data)
+
+# DimPlot(bc.combined.cc, reduction = "wnn.umap", cells.highlight = OTII$cell_id, cols = "#FCFDBFFF",cols.highlight = "#DD513AFF", pt.size = 0.5,sizes.highlight = 0.5)
+# Vb5 <- TCRgenotype_all[with(TCRgenotype_all, grepl('.*TRBV12.*TRBJ2-4.*', CTgene)),]
+# DimPlot(bc.combined.cc, reduction = "wnn.umap", cells.highlight = Vb5$cell_id, cols = "#FCFDBFFF",cols.highlight = "#DD513AFF", pt.size = 0.5,sizes.highlight = 0.5)
+# Va2 <- TCRgenotype_all[with(TCRgenotype_all, grepl('^TRAV14.*TRAJ31.*', CTgene)),]
+# DimPlot(bc.combined.cc, reduction = "wnn.umap", cells.highlight = Va2$cell_id, cols = "#FCFDBFFF",cols.highlight = "#DD513AFF", pt.size = 0.5,sizes.highlight = 0.5)
+# 
+# DimPlot(bc.combined.cc, reduction = "wnn.umap", cells.highlight = OTII$cell_id, cols = "#FCFDBFFF",cols.highlight = "#DD513AFF", pt.size = 0.5,sizes.highlight = 0.5)
+#Adding annotation of OTII status to metadata
+bc.combined.cc@meta.data$OTIIstatus <- "unknown"
+bc.combined.cc@meta.data[intersect(OTII$cell_id,cells_used),]$OTIIstatus <- "OTII"
+bc.combined.cc@meta.data[c(intersect(OTIItrav$cell_id,cells_used),intersect(OTIItrbv$cell_id,cells_used)),]$OTIIstatus <- "OTII - incomplete"
+bc.combined.cc@meta.data[c(intersect(OTIImultiTRAV$cell_id,cells_used),intersect(OTIImultiTRBV$cell_id,cells_used)),]$OTIIstatus <- "OTII - multichains"
+bc.combined.cc@meta.data[intersect(nonOTII,cells_used),]$OTIIstatus <- "non OTII"
+OTIIpalette <- c("#FDE725FF","#414487FF","#DE4968FF","#7AD151FF","#808080FF")
+names(OTIIpalette) <- c("OTII","OTII - incomplete","OTII - multichains","non OTII","unknown")
+DimPlot(bc.combined.cc, group.by = "OTIIstatus",split.by = "OTIIstatus", reduction = "wnn.umap", cols = OTIIpalette, pt.size = 0.5)
+DimPlot(bc.combined.cc, group.by = "OTIIstatus", split.by = "annotation", reduction = "wnn.umap", cols = OTIIpalette, pt.size = 0.5)
+
+
+FeaturePlot(bc.combined.cc, features = c("adt_TCR-VB5","Trbv12-2","adt_TCR-VA2","Trav14n-1"), reduction = "wnn.umap") & scale_colour_gradientn(colours = rev(viridis::magma(10)))|DimPlot(bc.combined.cc, reduction = "wnn.umap", cells.highlight = Vb5$cell_id, cols = "#FCFDBFFF",cols.highlight = "#DD513AFF", pt.size = 0.5,sizes.highlight = 0.5)| DimPlot(bc.combined.cc, reduction = "wnn.umap", cells.highlight = Va2$cell_id, cols = "#FCFDBFFF",cols.highlight = "#DD513AFF", pt.size = 0.5,sizes.highlight = 0.5)
+```
+
+```{r}
+bc.combined.cc@meta.data$OTII_geno <- "unknown"
+bc.combined.cc@meta.data[intersect(OTII$cell_id,cells_used),]$OTII_geno <- "OTII"
+bc.combined.cc@meta.data[intersect(OTIItrav$cell_id,cells_used),]$OTII_geno <- "OTII - Trbv missing"
+bc.combined.cc@meta.data[intersect(OTIItrbv$cell_id,cells_used),]$OTII_geno <- "OTII - Trav missing"
+bc.combined.cc@meta.data[intersect(OTIImultiTRAV$cell_id,cells_used),]$OTII_geno <- "OTII - multi-Trav"
+bc.combined.cc@meta.data[intersect(OTIImultiTRBV$cell_id,cells_used),]$OTII_geno <- "OTII - multi-Trbv"
+bc.combined.cc@meta.data[intersect(nonOTII,cells_used),]$OTII_geno <- "non OTII"
+```
+
+
+```{r}
+save(bc.combined.cc, file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/merge_2023exp_reg_cc.Robj")
+```
+
+

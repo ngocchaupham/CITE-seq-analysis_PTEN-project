@@ -1,0 +1,443 @@
+---
+title: "BC_merged_processing"
+author: "Chau"
+date: "2024-06-26"
+output: html_document
+---
+
+# Merge 03/2023 Balbc experiments : 
+
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(plotly)
+library(dplyr)
+library(DT)
+library(viridisLite)
+library(viridis)
+# Set the random number seed
+set.seed(1234)
+```
+
+```{r}
+#loading object
+load( file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/BC/20230320.Robj")
+Obj20230320 <- Seurat
+
+load( file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/BC/20230327.Robj")
+Obj20230327 <- Seurat
+
+load( file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/BC/20230303.Robj")
+Obj20230303 <- Seurat
+```
+
+
+## Rename
+```{r}
+#First level of annotation to be specified with late, early by FACS analysis
+#rename 230320
+Idents(Obj20230320) <- "MULTI_ID"
+T52 <- WhichCells(Obj20230320, idents = "Thymus-52")
+S52 <- WhichCells(Obj20230320, idents = "Spleen-52")
+
+T70 <- WhichCells(Obj20230320, idents = "Thymus-70")
+S70 <- WhichCells(Obj20230320, idents = "Spleen-70")
+
+T83 <- WhichCells(Obj20230320, idents = "Thymus-83")
+S83 <- WhichCells(Obj20230320, idents = "Spleen-83")
+
+T69 <- WhichCells(Obj20230320, idents = "Thymus-69")
+S69 <- WhichCells(Obj20230320, idents = "Spleen-69")
+
+Obj20230320$annotation <- ""
+
+Obj20230320@meta.data[S83,]$annotation = "Spleen-WT"
+Obj20230320@meta.data[T83,]$annotation = "Thymus-WT"
+Obj20230320@meta.data[c(S52,S70),]$annotation = "Spleen-PreTum late"
+Obj20230320@meta.data[c(T52,T70),]$annotation = "Thymus-PreTum late"
+Obj20230320@meta.data[S69,]$annotation = "Spleen-Tum"
+Obj20230320@meta.data[T69,]$annotation = "Thymus-Tum"
+
+#rename 230327
+Idents(Obj20230327) <- "MULTI_ID"
+S80 <- WhichCells(Obj20230327, idents = "Spleen-80")
+T80 <- WhichCells(Obj20230327, idents = "Thymus-80")
+
+S83 <- WhichCells(Obj20230327, idents = "Spleen-83")
+T83 <- WhichCells(Obj20230327, idents = "Thymus-83")
+
+T84 <- WhichCells(Obj20230327, idents = "Thymus-84")
+S84 <- WhichCells(Obj20230327, idents = "Spleen-84")
+
+T85 <- WhichCells(Obj20230327, idents = "Thymus-85")
+S85 <- WhichCells(Obj20230327, idents = "Spleen-85")
+
+Obj20230327$annotation <- ""
+
+Obj20230327@meta.data[c(S83),]$annotation = "Spleen-WT"
+Obj20230327@meta.data[c(T83),]$annotation = "Thymus-WT"
+
+Obj20230327@meta.data[c(S84,S85),]$annotation = "Spleen-PreTum late"
+Obj20230327@meta.data[c(T84,T85),]$annotation = "Thymus-PreTum late"
+
+Obj20230327@meta.data[c(S80),]$annotation = "Spleen-Tum"
+Obj20230327@meta.data[c(T80),]$annotation = "Thymus-Tum"
+
+## rename 230303
+Idents(Obj20230303) <- "MULTI_ID"
+S39 <- WhichCells(Obj20230303, idents = "Spleen-39")
+T39 <- WhichCells(Obj20230303, idents = "Thymus-39")
+
+S47 <- WhichCells(Obj20230303, idents = "Spleen-47")
+T47 <- WhichCells(Obj20230303, idents = "Thymus-47")
+
+T51 <- WhichCells(Obj20230303, idents = "Thymus-51")
+S51 <- WhichCells(Obj20230303, idents = "Spleen-51")
+
+T53 <- WhichCells(Obj20230303, idents = "Thymus-53")
+S53 <- WhichCells(Obj20230303, idents = "Spleen-53")
+
+
+Obj20230303$annotation <- ""
+
+Obj20230303@meta.data[c(S51),]$annotation = "Spleen-WT"
+Obj20230303@meta.data[c(T51),]$annotation = "Thymus-WT"
+
+Obj20230303@meta.data[c(T39),]$annotation = "Thymus-PreTum late"
+Obj20230303@meta.data[c(S39),]$annotation = "Spleen-PreTum late"
+
+Obj20230303@meta.data[c(T47),]$annotation = "Thymus-PreTum early"
+Obj20230303@meta.data[c(S47),]$annotation = "Spleen-PreTum early"
+
+Obj20230303@meta.data[c(S53),]$annotation = "Spleen-Tum"
+Obj20230303@meta.data[c(T53),]$annotation = "Thymus-Tum"
+
+```
+
+# OBJECT ONE PROCESSING AND SAVE
+```{r}
+bc.combined <- merge(Obj20230320, y = c(Obj20230327,Obj20230303), add.cell.ids = c("230320", "230327","230303"), project = "BALBc")
+
+#2- Find variable genes
+bc.combined <- FindVariableFeatures(object = bc.combined,assay = "RNA", selection.method = "vst", nfeatures = 2000)
+
+bc.combined <- ScaleData(bc.combined,assay="RNA",verbose = FALSE, do.center = TRUE)
+  
+bc.combined <- RunPCA(object = bc.combined,
+                    assay = "RNA",
+                    verbose = FALSE, #if TRUE print the top genes for each PC
+                    seed.use = 1234,
+                    npcs = 50) # sur les 50 premieres composantes
+  
+ElbowPlot(bc.combined, ndims = 50, reduction = "pca")
+
+# # Determine percent of variation associated with each PC
+pct <- bc.combined[["pca"]]@stdev / sum(bc.combined[["pca"]]@stdev) * 100
+# # Calculate cumulative percents for each PC
+cumu <- cumsum(pct)
+# # Determine which PC exhibits cumulative percent greater than 90% and % variation associated with the PC as less than 5
+co1 <- which(cumu > 90 & pct < 5)[1]
+print(co1)  
+
+bc.combined <- ProjectDim(object = bc.combined,
+                        nfeatures.print = 20,
+                        dims.print = 1:41)
+bc.combined <- FindNeighbors(object = bc.combined, 
+                           dims = 1:41 , 
+                           verbose = FALSE,
+                           reduction = "pca")
+DefaultAssay(bc.combined) <- "RNA"
+bc.combined <- FindClusters(object = bc.combined, 
+                          resolution =1 ,
+                          verbose = FALSE,
+                          random.seed = 1234)
+bc.combined <- RunUMAP(object = bc.combined, reduction = "pca", seed.use = 1234, dims = 1:41)
+DimPlot(bc.combined, group.by = "orig.ident")
+ggplotly(DimPlot(bc.combined, group.by = "annotation", shape.by = "orig.ident"))
+#save(bc.combined,file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/BC/merge_2023exp.Robj")
+#load(file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/BC/merge_2023exp.Robj")
+```
+
+ Merge checking
+## WT subset
+In order to check the merging, we subset the object to keep only WT cells (tumors can evolve differently)
+
+```{r}
+#Check merge based on WT mice
+Idents(bc.combined)<- "annotation"
+WTcells<- subset(bc.combined, idents = c("Thymus-WT", "Spleen-WT"))
+
+ggplotly(DimPlot(WTcells,group.by = "MULTI_ID"))
+ggplotly(DimPlot(WTcells,group.by = "orig.ident"))
+ggplotly(DimPlot(WTcells,group.by = "annotation"))
+ggplotly(DimPlot(WTcells,group.by = "RNA_snn_res.1"))
+
+FeaturePlot(WTcells, reduction = "umap", features = c("adt_CD25","Top2a","Mki67","adt_CD8","adt_CD4","adt_CD3","adt_CD62L","adt_CD44","adt_CCR7","Cpa3","Nkg7","adt_TCRgd",), cells = WhichCells(bc.combined, idents = "Thymus-WT")) & scale_colour_gradientn(colours = rev(viridis::magma(10)))
+
+FeaturePlot(WTcells,features = c("Cd4","Cd8a","Cd3d","Il2ra")) & scale_colour_gradientn(colours = rev(viridis::magma(10)))
+FeaturePlot(WTcells,features = c("Myc")) & scale_colour_gradientn(colours = rev(viridis::magma(10)))
+FeaturePlot(WTcells,features = c("adt_CD25","Top2a","Mki67","Ptcra")) & scale_colour_gradientn(colours = rev(viridis::magma(10)))
+FeaturePlot(bc.combined,features = c("Ms4a1", "Cd19", "Cd79a")) & scale_colour_gradientn(colours = rev(viridis::magma(10)))#markers of B cells : Cluster 13
+VlnPlot(WTcells,features ="percent.mt", group.by = "RNA_snn_res.1") # Cluster12 : dying
+VlnPlot(WTcells,features ="Myc", group.by = "RNA_snn_res.1")
+
+#Check merge based on mice 83 present in two of 3 exp
+Idents(bc.combined)<- "MULTI_ID"
+mice83 <- subset(bc.combined, idents = c("Thymus-83","Spleen-83"))
+
+ggplotly(DimPlot(mice83,group.by = "MULTI_ID"))
+ggplotly(DimPlot(mice83,group.by = "orig.ident"))
+ggplotly(DimPlot(mice83,group.by = "annotation"))
+```
+
+## Basic marker
+```{r}
+DimPlot(bc.combined,group.by = "MULTI_ID")
+ggplotly(DimPlot(bc.combined,group.by = "RNA_snn_res.1"))
+ggplotly(DimPlot(bc.combined,group.by = "annotation"))
+
+Idents(bc.combined)<-"annotation"
+Idents(bc.combined) <- factor(Idents(bc.combined), levels = c("Thymus-WT", "Spleen-WT","Thymus-PreTum early","Spleen-PreTum early","Thymus-PreTum late","Spleen-PreTum late","Thymus-Tum","Spleen-Tum" ))
+genes <- c("Kit","Cpa3","Ptcra","Il2ra","adt_CD25","Top2a","Mki67","Rag1","Cd3d","adt_CD3","Cd4","adt_CD4","Cd8a","adt_CD8","Cd5","adt_CD5","Cd69","adt_CD69","Cd27","Gzma","Nkg7","Ccl5","Cxcr3","Ccr7","Ccr4","adt_CCR7","Sell","Klrc1","Trdc","adt_TCRgd","Ccr9","Trbv12-2","adt_TCR-VB5","adt_TCR-VA2","percent.mt")
+dp <- DotPlot(bc.combined, features = genes) + geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) + scale_colour_gradient2(low = "steelblue", mid = "ivory1", high = "red") + guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white"))) + RotatedAxis()#+ coord_flip()
+dp + labs(title = "Expression of marker genes by clusters")
+
+FeaturePlot(bc.combined, reduction = "umap", features = c("adt_CD25","Top2a","Mki67","adt_CD8","adt_CD4","adt_CD3","adt_CD62L","adt_CD44","adt_CCR7","Cpa3","Nkg7","adt_TCRgd", "percent.mt"), cells = WhichCells(bc.combined, idents = "Thymus-WT")) & scale_colour_gradientn(colours = rev(viridis::magma(10)))
+
+FeaturePlot(bc.combined,features = c("Ms4a1")) & scale_colour_gradientn(colours = rev(viridis::magma(10)))
+VlnPlot(bc.combined,features ="percent.mt")
+VlnPlot(bc.combined,features ="Myc")
+
+FeaturePlot(bc.combined, features = c("Ccr9","Pdcd1","percent.mt","Mt1","Trgv2","percent.ribo"), order = T,) & scale_colour_gradientn(colours = rev(viridis::magma(10)))
+FeaturePlot(bc.combined, features = c("Trbc1","Ptcra"),order = T,) & scale_colour_gradientn(colours = rev(viridis::magma(10)))
+FeaturePlot(bc.combined, features = c("adt_CD3","adt_TCRgd","adt_TCR-B","TCR-VB5","TCR-VA2"), order = T,) & scale_colour_gradientn(colours = rev(viridis::magma(10)))
+FeaturePlot(bc.combined, features = c("Trav14-2","Trbv12-2"),order = T,cols = ,) & scale_colour_gradientn(colours = rev(viridis::magma(10)))
+rownames(bc.combined@assays$ADT)
+
+```
+
+##  Cleaning UMAP
+```{r}
+
+FeaturePlot(bc.combined,features = c("Cd68","Cst3","Lyz2")) # DC and macro : Cluster 29,32
+FeaturePlot(bc.combined, features = c("Ms4a1","Cd19")) # B cells : Cluster 3
+# We can delete those two cluster 
+ggplotly(DimPlot(bc.combined, group.by = "RNA_snn_res.1"))
+Idents(bc.combined) <- "RNA_snn_res.1"
+bc.combined <- subset(bc.combined,idents = c("29","32", "3"), invert = TRUE)
+```
+
+## Cell-Cycle Scoring and Regression
+```{r}
+load(file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/BC/merge_2023exp.Robj")
+
+# A list of cell cycle markers, from Tirosh et al, 2019, is loaded with Seurat.  We can
+# segregate this list into markers of G2/M phase and markers of S phase
+cc.genes.updated.2019.mouse <- readRDS(file ="/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/cc_genes_updated_2019_mouse.rds")
+s.genes <- cc.genes.updated.2019.mouse$s.genes
+g2m.genes <- cc.genes.updated.2019.mouse$g2m.genes
+
+# joinlayer is able to join layers 
+bc.combined <- JoinLayers(bc.combined)
+
+# Assign Cell-Cycle Scores
+bc.combined <- CellCycleScoring(object = bc.combined, s.features = cc.genes.updated.2019.mouse$s.genes, g2m.features = cc.genes.updated.2019.mouse$g2m.genes, set.ident = TRUE, verbose = FALSE)
+
+#visualize cell cycle phases
+DimPlot(bc.combined, group.by = "Phase")
+Idents(bc.combined) <- "Phase"
+RidgePlot(bc.combined, features = c("Pcna", "Top2a", "Mcm6", "Mki67"), ncol = 2)
+
+# Running a PCA on cell cycle genes reveals, unsurprisingly, that cells separate entirely by
+# phase
+bc.combined <- RunPCA(bc.combined, features = c(s.genes, g2m.genes))
+DimPlot(bc.combined, reduction = 'pca', dim = 1:2, group.by = "Phase")
+
+#regress on cell cycle
+bc.combined.cc <- ScaleData(bc.combined, vars.to.regress = c("S.Score", "G2M.Score"), features = rownames(bc.combined))
+Idents(bc.combined.cc) <- "Phase"
+
+# Running a PCA on cell cycle genes reveals for regressed object
+bc.combined.cc <- RunPCA(bc.combined.cc, features = c(s.genes, g2m.genes))
+DimPlot(bc.combined.cc, reduction = 'pca', dim = 1:2, group.by = "Phase")
+
+#Check regression
+bc.combined[["RNA"]]$scale.data[c("Cbx5","Gtse1","Dlgap5"),1:5]
+bc.combined.cc[["RNA"]]$scale.data[c("Cbx5","Gtse1","Dlgap5"),1:5]
+
+bc.combined[["RNA"]]$scale.data.230320["Mcm3",1:5]
+bc.combined.cc[["RNA"]]$scale.data.230320["Mcm3",1:5]
+
+bc.combined[["RNA"]]$scale.data["Mcm3",1:5]
+bc.combined.cc[["RNA"]]$scale.data["Mcm3",1:5]
+```
+
+## WNN analysis (RNA+ADT) on regressed objet
+```{r}
+#- Pre-processing and dimensional reduction on both assays independently
+## RNA
+bc.combined.cc <- RunPCA(object = bc.combined.cc,
+                    assay = "RNA",
+                    verbose = FALSE, #if TRUE print the top genes for each PC
+                    seed.use = 1234,
+                    npcs = 50) # sur les 50 premieres composantes
+  
+ElbowPlot(bc.combined.cc, ndims = 50, reduction = "pca")
+
+# # Determine percent of variation associated with each PC
+pct <- bc.combined.cc[["pca"]]@stdev / sum(bc.combined.cc[["pca"]]@stdev) * 100
+# # Calculate cumulative percents for each PC
+cumu <- cumsum(pct)
+# # Determine which PC exhibits cumulative percent greater than 90% and % variation associated with the PC as less than 5
+co1 <- which(cumu > 90 & pct < 5)[1]
+print(co1)  # 42 PCs for RNA
+
+## ADT
+DefaultAssay(bc.combined.cc) <- 'ADT'
+# we will use all ADT features for dimensional reduction
+# we set a dimensional reduction name to avoid overwriting the 
+VariableFeatures(bc.combined.cc) <- rownames(bc.combined.cc[["ADT"]])
+bc.combined.cc <- NormalizeData(bc.combined.cc, normalization.method = 'CLR', margin = 2) %>% 
+  ScaleData() %>% RunPCA(reduction.name = 'apca')
+ElbowPlot(bc.combined.cc, ndims = 14, reduction = "apca")
+# # Determine percent of variation associated with each PC
+pct <- bc.combined.cc[["apca"]]@stdev / sum(bc.combined.cc[["apca"]]@stdev) * 100
+# # Calculate cumulative percents for each PC
+cumu <- cumsum(pct)
+# # Determine which PC exhibits cumulative percent greater than 90% and % variation associated with the PC as less than 5
+co1 <- which(cumu > 90 & pct < 5)[1]
+print(co1)  # 12 PCs for ADT
+
+## WNN analysis
+# Identify multimodal neighbors. These will be stored in the neighbors layers, and can be accessed using bc.combined.cc[['weighted.nn']]
+# The WNN graph can be accessed at bc.combined.cc[["wknn"]], and the SNN graph used for clustering at bc.combined.cc[["wsnn"]]
+# Cell-specific modality weights can be accessed at bc.combined.cc$RNA.weight
+bc.combined.cc <- FindMultiModalNeighbors(
+  bc.combined.cc, reduction.list = list("pca", "apca"), 
+  dims.list = list(1:42, 1:12), modality.weight.name = "RNA.weight")
+
+#Visualize the modality weights that were learned for each cell. 
+VlnPlot(bc.combined.cc, features = "RNA.weight", group.by = 'annotation', sort = TRUE, pt.size = 0.1) +
+  NoLegend()
+VlnPlot(bc.combined.cc, features = "ADT.weight", group.by = 'annotation', sort = TRUE, pt.size = 0.1) +
+  NoLegend()
+  
+# Run UMAP with n.neighbors and min.dist by default
+bc.combined.cc <- RunUMAP(bc.combined.cc, nn.name = "weighted.nn", reduction.name = "wnn.umap", reduction.key = "wnnUMAP_", seed.use = 1234, n.neighbors = 30L, min.dist = 0.3)
+bc.combined.cc <- FindClusters(bc.combined.cc, graph.name = "wsnn", algorithm = 3, resolution = 1, verbose = FALSE, random.seed = 1234)
+bc.combined.cc <- RunUMAP(bc.combined.cc, reduction = 'pca', dims = 1:42, assay = 'RNA', 
+              reduction.name = 'rna.umap', reduction.key = 'rnaUMAP_', seed.use = 1234)
+bc.combined.cc <- RunUMAP(bc.combined.cc, reduction = 'apca', dims = 1:12, assay = 'ADT', 
+              reduction.name = 'adt.umap', reduction.key = 'adtUMAP_', seed.use = 1234)
+#To compare 
+p1 <- DimPlot(bc.combined.cc, reduction = "rna.umap", group.by = "annotation", label = T, repel = T) + ggtitle("RNA")
+p2 <- DimPlot(bc.combined.cc, reduction = "adt.umap", group.by = "annotation", label = T, repel = T) + ggtitle("ADT")
+p3 <- DimPlot(bc.combined.cc, reduction = "wnn.umap", group.by = "annotation", label = T, repel = T) + ggtitle("WNN")
+p1 + p2 + p3 & NoLegend() & theme(plot.title = element_text(hjust = 0.5))
+ggplotly(DimPlot(bc.combined.cc, reduction = "wnn.umap", group.by = "annotation", shape.by = "orig.ident"))
+
+#Chack some features : 
+DefaultAssay(bc.combined.cc) <- 'RNA'
+Idents(bc.combined.cc) <- "annotation"
+
+FeaturePlot(bc.combined.cc, reduction = "wnn.umap", features = c("adt_CD25","Top2a","Mki67","adt_CD8","adt_CD4","adt_CD3","adt_CD62L","adt_CD44","adt_CCR7","Cpa3","Nkg7","adt_TCRgd", "percent.mt")) & scale_colour_gradientn(colours = viridis(10))
+
+FeaturePlot(bc.combined.cc, reduction = "wnn.umap", features = c("adt_CD25","Top2a","Mki67","adt_CD8","adt_CD4","adt_CD3","adt_CD62L","adt_CD44","adt_CCR7","Cpa3","Nkg7","adt_TCRgd", "percent.mt"), cells = WhichCells(bc.combined, idents = "Thymus-WT")) & scale_colour_gradientn(colours = rev(viridis::magma(10)))
+
+FeaturePlot(bc.combined.cc, reduction = "adt.umap", features = c("adt_CD25","adt_CD8","adt_CD4","adt_CD3","adt_CD62L","adt_CD44","Mki67","Myc","Cpa3","Nkg7","adt_TCRgd","percent.mt"), cells = WhichCells(bc.combined.cc, idents = "Thymus-WT")) & scale_colour_gradientn(colours = rev(viridis::magma(10)))
+
+ggplotly(FeatureScatter(bc.combined.cc, feature1 = "Nkg7", feature2 = "adt_TCRgd", pt.size = 0.1))
+VlnPlot(bc.combined.cc, features = "Nkg7")
+```
+
+## Save merged and regressed BC_Object
+```{r}
+#save(bc.combined.cc, file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/BC/merge_2023exp_reg_cc.Robj")
+#load(file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/BC/merge_2023exp_reg_cc.Robj")
+```
+
+
+# WT subset 
+```{r}
+load(file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/merge_2023exp.Robj")
+Idents(bc.combined)<- "annotation"
+miceWT <- subset(bc.combined, idents = c("Thymus-WT","Spleen-WT"))
+miceWT <- NormalizeData(miceWT)
+miceWT <- FindVariableFeatures(object = miceWT, assay = "RNA", selection.method = "vst", nfeatures = 2000)
+miceWT <- ScaleData(miceWT,assay="RNA",verbose = FALSE, do.center = TRUE)
+miceWT <- RunPCA(object = miceWT,
+                    assay = "RNA",
+                    verbose = FALSE, 
+                    seed.use = 1234,
+                    npcs = 50)
+ElbowPlot(miceWT, ndims = 50, reduction = "pca") # 43 
+ProjectDim(miceWT, reduction = "pca", dims.print = 1:30, nfeatures.print = 10)
+# Determine percent of variation associated with each PC
+ pct <- miceWT[["pca"]]@stdev / sum(miceWT[["pca"]]@stdev) * 100
+# # Calculate cumulative percents for each PC
+cumu <- cumsum(pct)
+# # Determine which PC exhibits cumulative percent greater than 90% and % variation associated with the PC as less than 5
+co1 <- which(cumu > 90 & pct < 5)[1]
+print(co1)
+
+
+DefaultAssay(miceWT) <- 'ADT'
+# we will use all ADT features for dimensional reduction
+# we set a dimensional reduction name to avoid overwriting the 
+VariableFeatures(miceWT) <- rownames(miceWT[["ADT"]])
+miceWT <- NormalizeData(miceWT, normalization.method = 'CLR', margin = 2)
+
+miceWT <-ScaleData(miceWT, assay='ADT',verbose = FALSE, do.center = TRUE)
+miceWT <-RunPCA(miceWT, assay='ADT', reduction.name = 'apca', seed.use = 1234, npcs = 14)
+ElbowPlot(miceWT, ndims = 13, reduction = "apca") #11
+# Determine percent of variation associated with each PC
+pct <- miceWT[["apca"]]@stdev / sum(miceWT[["apca"]]@stdev) * 100
+# # Calculate cumulative percents for each PC
+cumu <- cumsum(pct)
+# # Determine which PC exhibits cumulative percent greater than 90% and % variation associated with the PC as less than 5
+co1 <- which(cumu > 90 & pct < 5)[1]
+print(co1)
+
+# Identify multimodal neighbors. These will be stored in the neighbors layers, 
+miceWT <- FindMultiModalNeighbors(
+  miceWT, reduction.list = list("pca", "apca"), 
+  dims.list = list(1:43, 1:11), modality.weight.name = c("RNA.weight", "ADT.weight"))
+
+
+miceWT <- RunUMAP(miceWT, nn.name = "weighted.nn", reduction.name = "wnn.umap", reduction.key = "wnnUMAP_", seed.use = 1234)
+miceWT <- FindClusters(miceWT, graph.name = "wsnn", algorithm = 1, resolution = c(0.4 ,0.5 ,0.6, 0.8, 1.0, 1.4), verbose = FALSE, random.seed = 1234)
+
+miceWT <- RunUMAP(miceWT, reduction = 'pca', dims = 1:43, assay = 'RNA', 
+              reduction.name = 'rna.umap', reduction.key = 'rnaUMAP_', seed.use = 1234)
+miceWT <- RunUMAP(miceWT, reduction = 'apca', dims = 1:11, assay = 'ADT', 
+              reduction.name = 'adt.umap', reduction.key = 'adtUMAP_', seed.use = 1234)
+
+#To compare 
+p1 <- DimPlot(miceWT, reduction = "rna.umap", group.by = "annotation", label = T, label.size = 6) + ggtitle("RNA")
+p2 <- DimPlot(miceWT, reduction = "adt.umap", group.by = "annotation", label = T, label.size = 6) + ggtitle("ADT")
+p3 <- DimPlot(miceWT, reduction = "wnn.umap", group.by = "annotation", label = T, label.size = 6) + ggtitle("WNN")
+p1 + p2 + p3 & NoLegend() & theme(plot.title = element_text(hjust = 0.5))
+
+#ggplotly(DimPlot(miceWT, reduction = "wnn.umap", group.by = "annotation", shape.by = "orig.ident"))
+
+DefaultAssay(miceWT) <- 'RNA'
+Idents(miceWT) <- "annotation"
+FeaturePlot(miceWT, reduction = "wnn.umap", features = c("adt_CD25","Il2ra","Mki67","adt_CD8","adt_CD4","adt_CD3","adt_CD62L","adt_CD69","Myc","adt_TCRgd","Rag1","percent.mt"), cells = WhichCells(miceWT, idents = "Thymus-WT")) & scale_colour_gradientn(colours = viridis(10))
+DimPlot(miceWT, reduction = "wnn.umap", group.by = "wsnn_res.0.6", label = T, label.size = 6)
+
+```
+
+## Cell cycle scoring 
+```{r}
+cc.genes.updated.2019.mouse <- readRDS(file ="/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/cc_genes_updated_2019_mouse.rds")
+# Assign Cell-Cycle Scores
+miceWT<- CellCycleScoring(object = miceWT, s.features = cc.genes.updated.2019.mouse$s.genes, g2m.features = cc.genes.updated.2019.mouse$g2m.genes, set.ident = TRUE, verbose = FALSE)
+DimPlot(miceWT, reduction = "wnn.umap", group.by = "Phase", label = F, pt.size = 1)
+```
+
+## Save WT object
+```{r}
+#save(miceWT, file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/BC/miceWT_2023_merged.Robj")
+```
+

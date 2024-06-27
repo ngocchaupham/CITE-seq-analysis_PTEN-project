@@ -1,0 +1,395 @@
+---
+title: "B6_merge_preprocess"
+author: "Chau"
+date: "2024-04-08"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+###############
+This rmarkdown file is set to work on Seurat 5.0.0
+###############
+Trying to merge two B6 experiments : 210322, 220318
+
+# Setting up
+```{r}
+library(Seurat)
+library(ggplot2)
+library(plotly)
+library(dplyr)
+library(DT)
+library(paletteer)
+library(viridisLite)
+library(viridis)
+# Set the random number seed
+set.seed(1234)
+```
+
+# Loading Seurat Objects 
+```{r}
+load( file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/B6/210322.Robj")
+Obj210322 <- Seuratmito
+
+load( file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/B6/220318.Robj")
+Obj220318 <- Seuratmito
+```
+
+
+```{r}
+# Number of cells in each experiment 
+seurat_list <- list(Obj210322, Obj220318)
+names(seurat_list) <- c("210322", "220318")
+cell_counts <- sapply(seurat_list, function(x) length(x@meta.data$MULTI_ID))
+names(cell_counts) <- c("210322","220318")
+barplot(cell_counts, main="Cell counts", xlab="Manip", ylab="Number of cells", col=c("green","blue", "red"))
+
+```
+
+# Rename MULTI_ID based on 
+```{r}
+Idents(Obj210322) <- "MULTI_ID"
+T497 <- WhichCells(Obj210322, idents = "Thymus-497")
+T499 <- WhichCells(Obj210322, idents = "Thymus-499")
+S497_499 <- WhichCells(Obj210322, idents = "Spleen-497+499")
+
+T500 <- WhichCells(Obj210322, idents = "Thymus-500")
+S500 <- WhichCells(Obj210322, idents = "Spleen-500")
+
+T498 <- WhichCells(Obj210322, idents = "Thymus-498")
+S498 <- WhichCells(Obj210322, idents = "Spleen-498")
+
+Obj210322$stage <- ""
+
+Obj210322@meta.data[S497_499,]$stage = "Spleen-WT"
+Obj210322@meta.data[c(T497,T499),]$stage = "Thymus-WT"
+Obj210322@meta.data[c(S498,S500),]$stage = "Spleen-PreTum" # Attention: Mouse 498 is Tum, not pre-tum (see FACS analysis) 
+Obj210322@meta.data[c(T498,T500),]$stage = "Thymus-PreTum"
+
+## rename 220318
+Idents(Obj220318) <- "MULTI_ID"
+S585 <- WhichCells(Obj220318, idents = "Spleen-585")
+T585 <- WhichCells(Obj220318, idents = "Thymus-585")
+
+S578 <- WhichCells(Obj220318, idents = "Spleen-578")
+T578 <- WhichCells(Obj220318, idents = "Thymus-578")
+
+T580 <- WhichCells(Obj220318, idents = "Thymus-580")
+S580 <- WhichCells(Obj220318, idents = "Spleen-580")
+
+T582 <- WhichCells(Obj220318, idents = "Thymus-582")
+S582 <- WhichCells(Obj220318, idents = "Spleen-582")
+
+
+Obj220318$stage <- ""
+
+Obj220318@meta.data[c(S585),]$stage = "Spleen-WT"
+Obj220318@meta.data[c(T585),]$stage = "Thymus-WT"
+
+
+Obj220318@meta.data[c(S578,S580,S582),]$stage = "Spleen-Tum"
+Obj220318@meta.data[c(T578,T580,T582),]$stage = "Thymus-Tum"
+
+```
+
+
+# OBJECT ONE PROCESSING AND SAVE
+```{r}
+#Merging 2 manips
+b6.combined <- merge(Obj210322, y = Obj220318, add.cell.ids = c("210322","220318"), project = "B6")
+
+b6.combined <- NormalizeData(b6.combined, verbose = FALSE)
+
+b6.combined <- FindVariableFeatures(object = b6.combined,assay = "RNA", selection.method = "vst", nfeatures = 2000)
+
+b6.combined <- ScaleData(b6.combined,assay="RNA",verbose = FALSE, do.center = TRUE)
+  
+b6.combined <- RunPCA(object = b6.combined,
+                    assay = "RNA",
+                    verbose = FALSE, #if TRUE print the top genes for each PC
+                    seed.use = 1234,
+                    npcs = 50) # sur les 50 premieres composantes
+  
+ElbowPlot(b6.combined, ndims = 50, reduction = "pca")
+
+# # Determine percent of variation associated with each PC
+pct <- b6.combined[["pca"]]@stdev / sum(b6.combined[["pca"]]@stdev) * 100
+# # Calculate cumulative percents for each PC
+cumu <- cumsum(pct)
+# # Determine which PC exhibits cumulative percent greater than 90% and % variation associated with the PC as less than 5
+co1 <- which(cumu > 90 & pct < 5)[1]
+print(co1)  
+DimHeatmap(b6.combined, dims = 30:45, cells = 10000, balanced = TRUE)
+b6.combined <- ProjectDim(object = b6.combined,
+                        nfeatures.print = 20,
+                        dims.print = 1:50)
+b6.combined <- FindNeighbors(object = b6.combined, 
+                           dims = 1:41 , 
+                           verbose = FALSE,
+                           reduction = "pca")
+DefaultAssay(b6.combined) <- "RNA"
+b6.combined <- FindClusters(object = b6.combined, 
+                          resolution =1 ,
+                          verbose = FALSE,
+                          random.seed = 1234)
+b6.combined <- RunUMAP(object = b6.combined, reduction = "pca", seed.use = 1234, dims = 1:41)
+
+```
+
+```{r}
+Idents(b6.combined) <- factor(Idents(b6.combined), levels = c("Thymus-WT", "Spleen-WT","Thymus-PreTum","Spleen-PreTum","Thymus-Tum","Spleen-Tum"))
+DimPlot(b6.combined, group.by = "stage", shape.by = "orig.ident", pt.size = 0.5)
+```
+
+
+```{r, fig.height=8,fig.width=10}
+ggplotly(DimPlot(b6.combined, group.by = "stage", shape.by = "orig.ident", pt.size = 0.2))
+#save(b6.combined,file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/B6/merge_B6_2024.Robj")
+#load(file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/B6/merge_B6_2024.Robj")
+```
+
+# QCs check
+```{r}
+VlnPlot(b6.combined,group.by = "orig.ident", features = c("nFeature_RNA","percent.ribo", "percent.mt"))
+```
+
+```{r}
+FeatureScatter(b6.combined, feature1 = "nFeature_RNA",feature2 = "percent.ribo", group.by = "orig.ident", split.by = "orig.ident", pt.size = 0.3)
+FeatureScatter(b6.combined, feature1 = "nFeature_RNA",feature2 = "percent.mt", group.by = "orig.ident", split.by = "orig.ident", pt.size = 0.3)
+```
+
+#Check merge based on WT mice
+```{r, fig.height=6, fig.width=14}
+#Check merge based on WT mice
+Idents(b6.combined) <- "stage"
+miceWT.B6 <- subset(b6.combined, idents = c("Thymus-WT","Spleen-WT"))
+DimPlot(miceWT.B6,group.by = "orig.ident")
+table(b6.combined$orig.ident,b6.combined$stage)
+```
+
+```{r}
+VlnPlot(miceWT.B6,features = c("percent.mt","percent.ribo","nFeature_RNA"),group.by = "orig.ident")
+```
+
+##Cell-Cycle Scoring and Regression
+
+```{r}
+# A list of cell cycle markers, from Tirosh et al, 2019, is loaded with Seurat.  We can
+# segregate this list into markers of G2/M phase and markers of S phase
+cc.genes.updated.2019.mouse <- readRDS(file ="/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/cc_genes_updated_2019_mouse.rds")
+s.genes <- cc.genes.updated.2019.mouse$s.genes
+g2m.genes <- cc.genes.updated.2019.mouse$g2m.genes
+# joinlayer is able to join layers 
+b6.combined <- JoinLayers(b6.combined)
+# Assign Cell-Cycle Scores
+b6.combined <- CellCycleScoring(object = b6.combined, s.features = cc.genes.updated.2019.mouse$s.genes, g2m.features = cc.genes.updated.2019.mouse$g2m.genes, set.ident = TRUE, verbose = FALSE)
+
+```
+
+```{r}
+DimPlot(b6.combined, reduction = 'umap', group.by = "Phase")
+```
+
+
+```{r}
+# Running a PCA on cell cycle genes reveals, unsurprisingly, that cells separate entirely by phase
+b6.combined <- RunPCA(b6.combined, features = c(s.genes, g2m.genes), reduction.name ="pca_phase")
+DimPlot(b6.combined, reduction = 'pca_phase', dim = 1:2, group.by = "Phase")
+```
+
+```{r}
+#regress on cell cycle
+b6.combined.cc <- b6.combined
+b6.combined.cc <- ScaleData(b6.combined.cc, vars.to.regress = c("S.Score", "G2M.Score"), features = rownames(b6.combined.cc))
+Idents(bc.combined.cc) <- "Phase"
+
+```
+
+```{r}
+# Running a PCA on cell cycle genes reveals for regressed object
+b6.combined.cc <- RunPCA(b6.combined.cc, features = c(s.genes, g2m.genes), reduction.name = "pca_regphase")
+DimPlot(b6.combined.cc, reduction = 'pca_regphase', dim = 1:2, group.by = "Phase")
+
+#Check regression
+b6.combined[["RNA"]]$scale.data[c("Cbx5","Gtse1","Dlgap5"),1:5]
+b6.combined.cc[["RNA"]]$scale.data[c("Cbx5","Gtse1","Dlgap5"),1:5]
+```
+
+##Re-do UMAP calcul
+```{r}
+b6.combined.cc <- RunPCA(object = b6.combined.cc,
+                    assay = "RNA",
+                    verbose = FALSE, #if TRUE print the top genes for each PC
+                    seed.use = 1234,
+                    npcs = 30) # sur les 50 premieres composantes
+  
+ElbowPlot(b6.combined.cc, ndims = 30, reduction = "pca")
+  
+b6.combined.cc <- ProjectDim(object = b6.combined.cc,
+                        nfeatures.print = 10,
+                        dims.print = 1:30)
+
+
+# # Determine percent of variation associated with each PC
+pct <- b6.combined.cc[["pca"]]@stdev / sum(b6.combined.cc[["pca"]]@stdev) * 100
+# # Calculate cumulative percents for each PC
+cumu <- cumsum(pct)
+# # Determine which PC exhibits cumulative percent greater than 90% and % variation associated with the PC as less than 5
+co1 <- which(cumu > 90 & pct < 5)[1]
+print(co1)
+
+
+#Check deviation in function of PC
+DimPlot(b6.combined.cc,reduction = "pca",dims = 25:26,group.by = "MULTI_ID") 
+DimPlot(b6.combined.cc,reduction = "pca",dims = 27:28,group.by = "MULTI_ID")
+
+#Clustering and Visualization
+#Dim = 26 
+b6.combined.cc <- FindNeighbors(object = b6.combined.cc, 
+                           dims = 1:26, 
+                           verbose = FALSE, 
+                           reduction = "pca")
+
+b6.combined.cc <- FindClusters(object = b6.combined.cc, 
+                          resolution =1 ,
+                          verbose = FALSE,
+                          random.seed = 1234)
+b6.combined.cc <- RunUMAP(object = b6.combined.cc, reduction = "pca", seed.use = 1234, dims = 1:26, n.neighbors = 60, min.dist = 0.2)
+
+Idents(b6.combined.cc) <- "stage"
+ggplotly(DimPlot(b6.combined.cc, group.by = "stage", shape.by = "orig.ident"))
+
+#visualize cell cycle phases
+DimPlot(b6.combined, group.by = "Phase")
+DimPlot(b6.combined.cc, group.by = "Phase")
+```
+
+# Remove cluster 10 from analysis (population infected in mouse 497, identified by FACS)
+```{r}
+Idents(b6.combined.cc) <- "RNA_snn_res.1"
+b6.combined.cc <- subset(b6.combined.cc, idents="10", invert=TRUE)
+```
+
+# Redo UMAP
+```{r}
+b6.combined.cc <- FindNeighbors(object = b6.combined.cc, 
+                           dims = 1:26, 
+                           verbose = FALSE, 
+                           reduction = "pca")
+
+b6.combined.cc <- FindClusters(object = b6.combined.cc, 
+                          resolution =1 ,
+                          verbose = FALSE,
+                          random.seed = 1234)
+b6.combined.cc <- RunUMAP(object = b6.combined.cc, reduction = "pca", seed.use = 1234, dims = 1:26, n.neighbors = 60, min.dist = 0.2)
+ggplotly(DimPlot(b6.combined.cc, group.by = "stage", shape.by = "orig.ident"))
+```
+
+#ADT 
+```{r}
+DefaultAssay(b6.combined.cc) <- 'ADT'
+# we will use all ADT features for dimensional reduction
+# we set a dimensional reduction name to avoid overwriting the 
+VariableFeatures(b6.combined.cc) <- rownames(b6.combined.cc[["ADT"]])
+b6.combined.cc <- NormalizeData(b6.combined.cc, normalization.method = 'CLR', margin = 2) %>% 
+  ScaleData() %>% RunPCA(reduction.name = 'apca')
+ElbowPlot(b6.combined.cc, ndims = 16, reduction = "apca")
+# # Determine percent of variation associated with each PC
+pct <- b6.combined.cc[["apca"]]@stdev / sum(b6.combined.cc[["apca"]]@stdev) * 100
+# # Calculate cumulative percents for each PC
+cumu <- cumsum(pct)
+# # Determine which PC exhibits cumulative percent greater than 90% and % variation associated with the PC as less than 5
+co1 <- which(cumu > 90 & pct < 5)[1]
+print(co1)  # 12 PCs for ADT
+
+b6.combined.cc <- RunUMAP(b6.combined.cc, reduction = 'apca', dims = 1:12, assay = 'ADT', 
+              reduction.name = 'adt.umap', reduction.key = 'adtUMAP_', seed.use = 1234)
+DimPlot(b6.combined.cc, reduction = "adt.umap", group.by = "stage", label = T, repel = T) + ggtitle("ADT") # Not overlap between 210322 and 220318. We don't integrate ADT in RNA for moment, need to correct batch effect ???
+DimPlot(b6.combined.cc, reduction = "umap", group.by = "stage", label = T, repel = T) + ggtitle("RNA") 
+
+```
+
+# SAVE OBJECT
+```{r}
+#save(b6.combined.cc,file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/B6/merge_B6ccregress_2024.Robj")
+#load(file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/B6/merge_B6ccregress_2024.Robj")
+```
+
+```{r}
+Idents(b6.combined.cc)<-"MULTI_ID"
+b6.combined.cc$MULTI_ID <- factor(b6.combined.cc$MULTI_ID, levels = c("Thymus-497","Thymus-499","Spleen-497+499","Thymus-585","Spleen-585","Thymus-500","Spleen-500","Thymus-498","Spleen-498","Thymus-578","Spleen-578","Thymus-580","Spleen-580","Thymus-582","Spleen-582"))
+VlnPlot(b6.combined.cc, features = "nFeature_RNA",group.by = "MULTI_ID", pt.size = 0, cols = c("#9AC4F8","#9AC4F8","#9AC4F8","#9AC4F8","#9AC4F8","#fac341","#fac341","#fac341","#fac341","#BB0A21","#BB0A21","#BB0A21","#BB0A21","#BB0A21","#BB0A21"))+geom_hline(yintercept = 2000, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "mean",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+
+
+Idents(b6.combined.cc)<-"stage"
+Idents(b6.combined.cc) <- factor(Idents(b6.combined.cc), levels = c("Thymus-WT", "Spleen-WT","Thymus-PreTum","Spleen-PreTum","Thymus-Tum","Spleen-Tum"))
+VlnPlot(b6.combined.cc, features = "nFeature_RNA", pt.size = 0, )+geom_hline(yintercept = 2000, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "mean",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+
+VlnPlot(b6.combined.cc, features = "Myc", pt.size = 0,group.by = "MULTI_ID", cols = c("#9AC4F8","#9AC4F8","#9AC4F8","#9AC4F8","#9AC4F8","#fac341","#fac341","#fac341","#fac341","#BB0A21","#BB0A21","#BB0A21","#BB0A21","#BB0A21","#BB0A21"))+geom_hline(yintercept = 2000, linetype ="dashed", size = 1, color="black")+
+  stat_summary(fun = "mean",
+           geom = "crossbar",
+           color = 'firebrick1', show.legend = F)
+
+
+```
+
+```{r}
+#order stage level
+b6.combined.cc$stage <- factor(b6.combined.cc$stage, levels = c("Thymus-WT","Thymus-PreTum","Thymus-Tum", "Spleen-WT", "Spleen-PreTum","Spleen-Tum"))
+#Palettes color for "stage"
+stage.palette <- c("#019875FF","#99B898FF","#FECEA8FF","#FF847CFF","#E84A5FFF","#C0392BFF")#rev(paletteer::paletteer_d("ggprism::plasma") )
+names(stage.palette) <- c("Thymus-WT","Spleen-WT","Thymus-PreTum","Spleen-PreTum","Thymus-Tum","Spleen-Tum")
+```
+
+```{r}
+ggplotly(DimPlot(b6.combined.cc, group.by = "stage", shape.by = "orig.ident", cols = stage.palette))
+```
+
+```{r}
+FeaturePlot(b6.combined.cc, features = c("Snca","Ms4a1"),order = T, reduction = "umap", pt.size = 0.2) & scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+```
+
+# WT subset 
+```{r}
+Idents(b6.combined.cc) <- "stage"
+miceWT <- subset(b6.combined.cc, idents = c("Thymus-WT","Spleen-WT"))
+miceWT <- NormalizeData(miceWT)
+miceWT <- FindVariableFeatures(object = miceWT, assay = "RNA", selection.method = "vst", nfeatures = 2000)
+miceWT <- ScaleData(miceWT,assay="RNA",verbose = FALSE, do.center = TRUE)
+miceWT <- RunPCA(object = miceWT,
+                    assay = "RNA",
+                    verbose = FALSE, 
+                    seed.use = 1234,
+                    npcs = 50)
+ElbowPlot(miceWT, ndims = 50, reduction = "pca")
+ProjectDim(miceWT, dims.print = 1:30, nfeatures.print = 20)
+
+# Determine percent of variation associated with each PC
+ pct <- miceWT[["pca"]]@stdev / sum(miceWT[["pca"]]@stdev) * 100
+# # Calculate cumulative percents for each PC
+cumu <- cumsum(pct)
+# # Determine which PC exhibits cumulative percent greater than 90% and % variation associated with the PC as less than 5
+co1 <- which(cumu > 90 & pct < 5)[1]
+print(co1)
+miceWT <- FindNeighbors(object = miceWT, 
+                           dims = 1:26, 
+                           verbose = FALSE, 
+                           reduction = "pca")
+
+miceWT <- FindClusters(object = miceWT, 
+                          resolution =1 ,
+                          verbose = FALSE,
+                          random.seed = 1234)
+#miceWT <- RunUMAP(object = miceWT, reduction = "pca", seed.use = 1234, dims = 1:26)
+miceWT <- RunUMAP(object = miceWT, reduction = "pca", seed.use = 1234, dims = 1:26, n.neighbors =60, min.dist = 0.2)
+DimPlot(miceWT, reduction = "umap", group.by = "stage")
+ggplotly(DimPlot(miceWT, reduction = "umap", group.by = "RNA_snn_res.1"))
+#save(miceWT, file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/B6/miceWT_B6_merged.Robj")
+```
+

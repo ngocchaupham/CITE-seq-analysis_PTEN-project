@@ -1,0 +1,176 @@
+---
+title: "B6_integration"
+author: "Chau"
+date: "2024-04-11"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+###############
+This rmarkdown file is set to work on Seurat 5.0.0
+###############
+Trying to integrate three B6 experiments : 210322, 210708, 220318
+
+# Setting up
+```{r}
+library(Seurat)
+library(ggplot2)
+library(plotly)
+library(dplyr)
+library(DT)
+library(paletteer)
+# Set the random number seed
+set.seed(1234)
+```
+
+# Loading merged Seurat Object
+```{r}
+load(file = "/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/B6/merge_B6.Robj")
+```
+
+# CCA Integration 
+## Integration of RNA assay
+```{r}
+DefaultAssay(b6.combined) <- "RNA"
+#Split into a list
+Seurat_list = SplitObject(b6.combined, split.by = "orig.ident")
+# normalize and identify variable features for each dataset independently
+Seurat_list <- lapply(X = Seurat_list, FUN = function(x) {
+    x <- NormalizeData(x)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+      return(x)
+})
+
+
+# Select only the variable features shared by all samples
+VARIABLE_FEATURES = lapply(Seurat_list, function(x) VariableFeatures(x))
+VARIABLE_FEATURES = Reduce(intersect, VARIABLE_FEATURES)
+#features <- SelectIntegrationFeatures(object.list = Seurat_list)
+
+Seurat_list <- lapply(X = Seurat_list, FUN = function(x) {
+    x <- ScaleData(x, features = VARIABLE_FEATURES, verbose = FALSE)
+    x <- RunPCA(x, features = VARIABLE_FEATURES, verbose = FALSE)
+})
+
+#Find VariableFeatures across samples
+b6.anchors <- FindIntegrationAnchors(object.list = Seurat_list, anchor.features = VARIABLE_FEATURES)
+# this command creates an 'integrated' data assay
+b6.integrated <- IntegrateData(anchorset = b6.anchors, new.assay.name = "integratedRNA")  
+
+# specify that we will perform downstream analysis on the corrected data note that the
+# original unmodified data still resides in the 'RNA' assay
+DefaultAssay(b6.integrated) <- "integratedRNA"
+# Run the standard workflow for visualization and clustering
+b6.integrated <- ScaleData(b6.integrated, verbose = FALSE)
+b6.integrated <- RunPCA(b6.integrated, npcs = 50, verbose = FALSE)
+ElbowPlot(b6.integrated, ndims = 50, reduction = "pca")
+DimHeatmap(b6.integrated, dims = 15:30, cells = 10000, balanced = TRUE)
+b6.integrated <- RunUMAP(b6.integrated, reduction = "pca", dims = 1:30)
+b6.integrated <- FindNeighbors(b6.integrated, reduction = "pca", dims = 1:30)
+b6.integrated <- FindClusters(b6.integrated, resolution = 0.5)
+#save(b6.integrated, file ="/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/B6/b6.CCAintegrated.Robj")
+load(file ="/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/B6/b6.CCAintegrated.Robj")
+```
+
+```{r, fig.height=5, fig.width=8}
+DimPlot(b6.integrated, reduction = "umap", group.by = c("orig.ident"))
+```
+
+```{r}
+DimPlot(b6.integrated, reduction = "umap", group.by = c("stage"))
+```
+
+```{r, fig.height=5, fig.width=7}
+DimPlot(b6.integrated, reduction = "umap", group.by = "MULTI_ID")
+```
+
+```{r}
+#Check integration based on WT mice
+Idents(b6.integrated)<- "stage"
+miceWT.integrated <- subset(b6.integrated, idents = c("Thymus-WT","Spleen-WT"))
+ggplotly(DimPlot(miceWT.integrated,group.by = "MULTI_ID"))
+ggplotly(DimPlot(miceWT.integrated,group.by = "orig.ident"))
+FeaturePlot(miceWT.integrated,  features = c("Il2ra","Mki67","Cd8a","Cd4","Cd3e","Cd69","Myc","Rag1","percent.mt"))& scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+FeaturePlot(b6.integrated,  features = c("Il2ra","Mki67","Cd8a","Cd4","Cd3e","Cd69","Myc","Rag1","Trdc","percent.mt"))& scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+```
+
+
+ 
+```{r}
+# #Integration using CCA-SCT
+# #Split into a list
+# seurat_list = SplitObject(b6.combined, split.by = "orig.ident")
+# 
+# # normalize and identify variable features for each dataset independently
+# Seurat_list <- lapply(X = Seurat_list, FUN = function(x) {
+#     x <- SCTransform(x, vars.to.regress = "nFeature_RNA", verbose = FALSE)
+# })
+# 
+# #Find VariableFeatures across samples
+# integ_features <- SelectIntegrationFeatures(object.list = Seurat_list, 
+#                                             nfeatures = 3000) 
+# # Prepare the SCT list object for integration
+# Seurat_list <- PrepSCTIntegration(object.list = Seurat_list, 
+#                                    anchor.features = integ_features)
+# # Find best buddies
+# integ_anchors <- FindIntegrationAnchors(object.list = Seurat_list, 
+#                                         normalization.method = "SCT", 
+#                                         anchor.features = integ_features)
+# b6.integrated <- IntegrateData(anchorset = integ_anchors, 
+#                                    normalization.method = "SCT")
+# b6.integrated <- RunPCA(object = b6.integrated)
+# # Plot PCA
+# PCAPlot(b6.integrated,
+#         split.by = "orig.ident")  
+# ElbowPlot(b6.integrated, ndims = 30, reduction = "pca")
+# b6.integrated <- FindNeighbors(b6.integrated, reduction = "pca", dims = 1:18)
+# b6.integrated <- FindClusters(b6.integrated, resolution = 1)
+# b6.integrated <- RunUMAP(b6.integrated, dims = 1:18, reduction = "pca")
+
+```
+
+# Fast integration using reciprocal PCA (RPCA)
+ This method determines anchors between any two datasets using RPCA, we project each dataset into the others PCA space and constrain the anchors by the same mutual neighborhood requirement.
+ 
+```{r}
+DefaultAssay(b6.combined) <- "RNA"
+#Split into a list
+Seurat_list2 = SplitObject(b6.combined, split.by = "orig.ident")
+# normalize and identify variable features for each dataset independently
+Seurat_list2 <- lapply(X = Seurat_list, FUN = function(x) {
+    x <- SCTransform(x, method = "glmGamPoi" ,verbose = FALSE)
+      return(x)
+})
+features <- SelectIntegrationFeatures(object.list = Seurat_list2, nfeatures = 3000)
+Seurat_list2 <- PrepSCTIntegration(object.list = Seurat_list2, anchor.features = features)
+Seurat_list2 <- lapply(X = Seurat_list2, FUN = RunPCA, features = features)
+b6.anchors2 <- FindIntegrationAnchors(object.list = Seurat_list2, normalization.method = "SCT",
+    anchor.features = features, dims = 1:30, reduction = "rpca", k.anchor = 20)
+b6.rpca.sct <- IntegrateData(anchorset = b6.anchors2, normalization.method = "SCT", dims = 1:30, new.assay.name = "integratedRNA")
+
+# specify that we will perform downstream analysis on the corrected data note that the
+# original unmodified data still resides in the 'RNA' assay
+DefaultAssay(b6.rpca.sct) <- "integrated"
+b6.rpca.sct <- RunPCA(b6.rpca.sct, npcs = 30, verbose = FALSE)
+ElbowPlot(b6.rpca.sct, ndims = 20, reduction = "pca")
+
+b6.rpca.sct <- RunUMAP(b6.rpca.sct, reduction = "pca", dims = 1:30)
+b6.rpca.sct <- FindNeighbors(b6.rpca.sct, reduction = "pca", dims = 1:30)
+b6.rpca.sct <- FindClusters(b6.rpca.sct, resolution = 0.5)
+#save(b6.rpca.sct, file ="/mnt/NASBIOINFO_CP/LALT/BIOINFO/PTEN/03_Analysis/Analysis2024/RObject/B6/b6.RPCAintegrated.Robj")
+```
+```{r}
+DimPlot(b6.rpca.sct, reduction = "umap", group.by = c("stage"))
+```
+
+```{r}
+DefaultAssay(b6.rpca.sct) <- "integrated"
+DefaultAssay(b6.rpca.sct) <- "rna"
+FeaturePlot(b6.rpca.sct,  features = c("Il2ra","Mki67","Cd8a","Cd4","Cd3e","Cd69","Myc","Rag1","Trdc","percent.mt"))& scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+FeaturePlot(b6.rpca.sct,  features = c("Il2ra","Mki67","adt_CD8","adt_CD4","Cd3e","Cd69","Myc","Rag1","Trdc","percent.mt"))& scale_colour_gradientn(colours = rev(viridis::rocket(10)))
+```
+ 
+
+ 
+ 
