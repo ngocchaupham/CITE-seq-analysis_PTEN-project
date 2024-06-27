@@ -18,9 +18,9 @@ In order to re do VDJ Analysis you can follow guidelines and script here : [03_V
 
 ### Data Availability
 #### Seurat analysis
-- Seurat rmd script to reproduce the preprocessing and analysis can be found [here](02_Seurat_analysis/01_Script/)
+- Seurat rmd script to reproduce the preprocessing and analysis can be found [here](02_Seurat_analysis/01_Scripts/)
 #### VDJ analysis
-- VDJ analysis rmd script [here](03_VDJ_analysis/01_Script)
+- VDJ analysis rmd script [here](03_VDJ_analysis/01_Scripts)
 
 #### Docker and Singularity images
 Singularity/Docker images and Robj are all availabe in [Zenodo](https://zenodo.org/uploads/10671667)
